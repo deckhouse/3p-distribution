@@ -13,7 +13,7 @@ import (
 	distribution_context "github.com/docker/distribution/context"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/cache/memory"
-	"github.com/docker/distribution/registry/storage/driver"
+	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/docker/libtrust"
 
 	// "github.com/docker/distribution/registry/storage/driver/filesystem"
@@ -29,7 +29,7 @@ type schedulerEntryTest struct {
 	EntryType int `json:"EntryType"`
 }
 
-func newRegistry(t *testing.T) (driver.StorageDriver, distribution.Namespace) {
+func newRegistry(t *testing.T) (storagedriver.StorageDriver, distribution.Namespace) {
 	ctx := distribution_context.Background()
 	k, err := libtrust.GenerateECP256PrivateKey()
 	if err != nil {
@@ -157,6 +157,7 @@ func testRefs(t *testing.T) (reference.Reference, reference.Reference, reference
 
 func TestSchedule(t *testing.T) {
 	driver, registry := newRegistry(t)
+	ttl := 24 * 7 * time.Hour
 
 	ref1, ref2, ref3 := testRefs(t)
 	timeUnit := time.Millisecond
@@ -167,7 +168,7 @@ func TestSchedule(t *testing.T) {
 	}
 
 	var mu sync.Mutex
-	s := New(context.Background(), driver, registry, "/ttl")
+	s := New(context.Background(), ttl, driver, registry, "/ttl")
 	deleteFunc := func(repoName reference.Reference) error {
 		if len(remainingRepos) == 0 {
 			t.Fatalf("Incorrect expiry count")
@@ -211,6 +212,7 @@ func TestSchedule(t *testing.T) {
 
 func TestRestoreOld(t *testing.T) {
 	driver, registry := newRegistry(t)
+	ttl := 24 * 7 * time.Hour
 
 	ref1, ref2, _ := testRefs(t)
 	remainingRepos := map[string]bool{
@@ -259,7 +261,7 @@ func TestRestoreOld(t *testing.T) {
 	if err != nil {
 		t.Fatal("Unable to write serialized data to fs")
 	}
-	s := New(context.Background(), driver, registry, "/ttl")
+	s := New(context.Background(), ttl, driver, registry, "/ttl")
 	s.OnBlobExpire(deleteFunc)
 	err = s.Start()
 	if err != nil {
@@ -297,6 +299,7 @@ func TestStoreState(t *testing.T) {
 	ctx := context.Background()
 	driver, registry := newRegistry(t)
 	v := storage.NewVacuum(ctx, driver)
+	ttl := 24 * 7 * time.Hour
 
 	// Create img1, img2, img3
 	manifestRef1, blobsRef1 := populateRepo(ctx, t, registry, "test", "latest", 1)
@@ -379,7 +382,7 @@ func TestStoreState(t *testing.T) {
 	}
 
 	// Start sheduler
-	s := New(context.Background(), driver, registry, pathToStatFile)
+	s := New(context.Background(), ttl, driver, registry, pathToStatFile)
 	s.OnBlobExpire(onBlobExpire)
 	s.OnManifestExpire(onManifestExpire)
 	err = s.Start()
@@ -388,9 +391,9 @@ func TestStoreState(t *testing.T) {
 	}
 
 	// Add img3 (Expiry after repositoryTTL time)
-	s.AddManifest(manifestRef3, repositoryTTL)
+	s.AddManifest(manifestRef3, ttl)
 	for _, blob := range blobsRef3 {
-		s.AddBlob(blob, repositoryTTL)
+		s.AddBlob(blob, ttl)
 	}
 
 	// Wait Expiry img1 and img2, and save state file in storage
@@ -424,6 +427,7 @@ func TestStoreState(t *testing.T) {
 
 func TestStopRestore(t *testing.T) {
 	driver, registry := newRegistry(t)
+	ttl := 24 * 7 * time.Hour
 
 	ref1, ref2, _ := testRefs(t)
 
@@ -442,7 +446,7 @@ func TestStopRestore(t *testing.T) {
 	}
 
 	pathToStateFile := "/ttl"
-	s := New(context.Background(), driver, registry, pathToStateFile)
+	s := New(context.Background(), ttl, driver, registry, pathToStateFile)
 	s.onBlobExpire = deleteFunc
 
 	err := s.Start()
@@ -458,7 +462,7 @@ func TestStopRestore(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// v2 will restore state from fs
-	s2 := New(context.Background(), driver, registry, pathToStateFile)
+	s2 := New(context.Background(), ttl, driver, registry, pathToStateFile)
 	s2.onBlobExpire = deleteFunc
 	err = s2.Start()
 	if err != nil {
@@ -478,15 +482,7 @@ func TestFillStateFromStorageExpireState(t *testing.T) {
 	var mu sync.Mutex
 	timeUnit := time.Millisecond
 	pathToStatFile := "/ttl"
-	saveRepositoryTTL := 10 * timeUnit
-
-	swapTTL := func() {
-		saveRepositoryTTL, repositoryTTL = repositoryTTL, saveRepositoryTTL
-	}
-	swapTTL()
-	defer func() {
-		swapTTL()
-	}()
+	ttl := 10 * timeUnit
 
 	allManifests := map[reference.Canonical]struct{}{}
 	allBlobs := map[reference.Canonical]struct{}{}
@@ -552,7 +548,7 @@ func TestFillStateFromStorageExpireState(t *testing.T) {
 	}
 
 	// Start sheduler with empty state, expected startFiller
-	s := New(context.Background(), driver, registry, pathToStatFile)
+	s := New(context.Background(), ttl, driver, registry, pathToStatFile)
 	s.OnBlobExpire(onBlobExpire)
 	s.OnManifestExpire(onManifestExpire)
 	err := s.Start()
@@ -577,15 +573,7 @@ func TestFillStateFromStorageExpireState(t *testing.T) {
 
 func TestFillStateFromStorageStoreState(t *testing.T) {
 	pathToStatFile := "/ttl"
-	saveRepositoryTTL := 10000 * time.Hour
-
-	swapTTL := func() {
-		saveRepositoryTTL, repositoryTTL = repositoryTTL, saveRepositoryTTL
-	}
-	swapTTL()
-	defer func() {
-		swapTTL()
-	}()
+	ttl := 10000 * time.Hour
 
 	ctx := context.Background()
 	driver, registry := newRegistry(t)
@@ -649,7 +637,7 @@ func TestFillStateFromStorageStoreState(t *testing.T) {
 	}
 
 	// Start sheduler with empty state, expected startFiller
-	s := New(context.Background(), driver, registry, pathToStatFile)
+	s := New(context.Background(), ttl, driver, registry, pathToStatFile)
 	s.OnBlobExpire(onBlobExpire)
 	s.OnManifestExpire(onManifestExpire)
 	err := s.Start()
@@ -689,15 +677,7 @@ func TestFillStateFromStorageStoreState(t *testing.T) {
 func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 	timeUnit := time.Millisecond
 	pathToStatFile := "/ttl"
-	saveRepositoryTTL := 10000 * timeUnit
-
-	swapTTL := func() {
-		saveRepositoryTTL, repositoryTTL = repositoryTTL, saveRepositoryTTL
-	}
-	swapTTL()
-	defer func() {
-		swapTTL()
-	}()
+	ttl := 10000 * timeUnit
 
 	ctx := context.Background()
 	driver, registry := newRegistry(t)
@@ -761,7 +741,7 @@ func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 	}
 
 	// Start and stop sheduler with empty state, expected startFiller
-	s1 := New(context.Background(), driver, registry, pathToStatFile)
+	s1 := New(context.Background(), ttl, driver, registry, pathToStatFile)
 	s1.OnBlobExpire(onBlobExpire)
 	s1.OnManifestExpire(onManifestExpire)
 	err := s1.Start()
@@ -781,7 +761,7 @@ func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 	manifestRef, blobsRef := populateRepo(ctx, t, registry, "f/g/h", "latest", 2)
 
 	// Start and stop sheduler with not empty state, not expected startFiller
-	s2 := New(context.Background(), driver, registry, pathToStatFile)
+	s2 := New(context.Background(), ttl, driver, registry, pathToStatFile)
 	s2.OnBlobExpire(onBlobExpire)
 	s2.OnManifestExpire(onManifestExpire)
 	err = s2.Start()
@@ -803,7 +783,7 @@ func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 	}
 
 	// Create the third scheduler
-	s3 := New(context.Background(), driver, registry, pathToStatFile)
+	s3 := New(context.Background(), ttl, driver, registry, pathToStatFile)
 	s3.OnBlobExpire(onBlobExpire)
 	s3.OnManifestExpire(onManifestExpire)
 	err = s3.Start()
@@ -812,9 +792,9 @@ func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 	}
 
 	// Add data to the scheduler with new img4
-	s3.AddManifest(manifestRef, repositoryTTL)
+	s3.AddManifest(manifestRef, ttl)
 	for _, blob := range blobsRef {
-		s3.AddBlob(blob, repositoryTTL)
+		s3.AddBlob(blob, ttl)
 	}
 
 	<-time.After(100 * timeUnit)
@@ -834,8 +814,9 @@ func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 
 func TestDoubleStart(t *testing.T) {
 	driver, registry := newRegistry(t)
+	ttl := 24 * 7 * time.Hour
 
-	s := New(context.Background(), driver, registry, "/ttl")
+	s := New(context.Background(), ttl, driver, registry, "/ttl")
 	err := s.Start()
 	if err != nil {
 		t.Fatalf("Unable to start scheduler")

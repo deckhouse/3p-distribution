@@ -319,14 +319,8 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	}
 
 	// configure as a pull through cache
-	if config.Proxy.RemoteURL != "" {
-		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
-		if err != nil {
-			panic(err.Error())
-		}
-		app.isCache = true
-		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
-	} else {
+	if config.Proxy.RemoteURL == "" || (config.Proxy.TTL != nil && *config.Proxy.TTL <= 0) {
+		// Remove "/scheduler-state.json"
 		pathToStateFile := "/scheduler-state.json"
 		if _, err := app.driver.Stat(ctx, pathToStateFile); err != nil {
 			switch err := err.(type) {
@@ -339,6 +333,14 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 				panic(err.Error())
 			}
 		}
+	}
+	if config.Proxy.RemoteURL != "" {
+		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
+		if err != nil {
+			panic(err.Error())
+		}
+		app.isCache = true
+		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
 	}
 	var ok bool
 	app.repoRemover, ok = app.registry.(distribution.RepositoryRemover)
