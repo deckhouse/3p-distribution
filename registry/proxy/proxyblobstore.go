@@ -15,11 +15,12 @@ import (
 )
 
 type proxyBlobStore struct {
-	localStore     distribution.BlobStore
-	remoteStore    distribution.BlobService
-	scheduler      *scheduler.TTLExpirationScheduler
-	repositoryName reference.Named
-	authChallenger authChallenger
+	localStore           distribution.BlobStore
+	remoteStore          distribution.BlobService
+	scheduler            *scheduler.TTLExpirationScheduler
+	localRepositoryName  reference.Named
+	remoteRepositoryName reference.Named
+	authChallenger       authChallenger
 }
 
 var _ distribution.BlobStore = &proxyBlobStore{}
@@ -140,7 +141,7 @@ func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter,
 			dcontext.GetLogger(ctx).Errorf("Error committing to storage: %s", err.Error())
 		}
 
-		blobRef, err := reference.WithDigest(pbs.repositoryName, dgst)
+		blobRef, err := reference.WithDigest(pbs.localRepositoryName, dgst)
 		if err != nil {
 			dcontext.GetLogger(ctx).Errorf("Error creating reference: %s", err)
 			return

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/distribution/reference"
@@ -26,10 +27,22 @@ type proxyingRegistry struct {
 	scheduler      *scheduler.TTLExpirationScheduler
 	remoteURL      url.URL
 	authChallenger authChallenger
+	remotePathOnly string
+	localPathAlias string
 }
 
 // NewRegistryPullThroughCache creates a registry acting as a pull through cache
 func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Namespace, driver driver.StorageDriver, config configuration.Proxy) (distribution.Namespace, error) {
+	remotePathOnly := strings.Trim(strings.TrimSpace(config.RemotePathOnly), "/")
+	localPathAlias := strings.Trim(strings.TrimSpace(config.LocalPathAlias), "/")
+
+	if remotePathOnly == "" && localPathAlias != "" {
+		return nil, fmt.Errorf(
+			"unknown remote path for the alias of the local path '%s', fill in the 'proxy.remotepathonly' field",
+			localPathAlias,
+		)
+	}
+
 	remoteURL, err := url.Parse(config.RemoteURL)
 	if err != nil {
 		return nil, err
@@ -99,9 +112,11 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 	}
 
 	return &proxyingRegistry{
-		embedded:  registry,
-		scheduler: s,
-		remoteURL: *remoteURL,
+		embedded:       registry,
+		scheduler:      s,
+		remoteURL:      *remoteURL,
+		remotePathOnly: remotePathOnly,
+		localPathAlias: localPathAlias,
 		authChallenger: &remoteAuthChallenger{
 			remoteURL: *remoteURL,
 			cm:        challenge.NewSimpleManager(),
@@ -119,6 +134,16 @@ func (pr *proxyingRegistry) Repositories(ctx context.Context, repos []string, la
 }
 
 func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named) (distribution.Repository, error) {
+	localRepositoryName := name
+	remoteRepositoryName, err := pr.getRemoteRepositoryName(name)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err = pr.repositoryIsAllowed(name); err != nil {
+		return nil, err
+	}
+
 	c := pr.authChallenger
 
 	tkopts := auth.TokenHandlerOptions{
@@ -126,7 +151,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		Credentials: c.credentialStore(),
 		Scopes: []auth.Scope{
 			auth.RepositoryScope{
-				Repository: name.Name(),
+				Repository: remoteRepositoryName.Name(),
 				Actions:    []string{"pull"},
 			},
 		},
@@ -137,7 +162,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		auth.NewAuthorizer(c.challengeManager(),
 			auth.NewTokenHandlerWithOptions(tkopts)))
 
-	localRepo, err := pr.embedded.Repository(ctx, name)
+	localRepo, err := pr.embedded.Repository(ctx, localRepositoryName)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +171,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		return nil, err
 	}
 
-	remoteRepo, err := client.NewRepository(name, pr.remoteURL.String(), tr)
+	remoteRepo, err := client.NewRepository(remoteRepositoryName, pr.remoteURL.String(), tr)
 	if err != nil {
 		return nil, err
 	}
@@ -158,21 +183,23 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	return &proxiedRepository{
 		blobStore: &proxyBlobStore{
-			localStore:     localRepo.Blobs(ctx),
-			remoteStore:    remoteRepo.Blobs(ctx),
-			scheduler:      pr.scheduler,
-			repositoryName: name,
-			authChallenger: pr.authChallenger,
+			localStore:           localRepo.Blobs(ctx),
+			remoteStore:          remoteRepo.Blobs(ctx),
+			scheduler:            pr.scheduler,
+			localRepositoryName:  localRepositoryName,
+			remoteRepositoryName: remoteRepositoryName,
+			authChallenger:       pr.authChallenger,
 		},
 		manifests: &proxyManifestStore{
-			repositoryName:  name,
-			localManifests:  localManifests, // Options?
-			remoteManifests: remoteManifests,
-			ctx:             ctx,
-			scheduler:       pr.scheduler,
-			authChallenger:  pr.authChallenger,
+			localRepositoryName:  localRepositoryName,
+			remoteRepositoryName: remoteRepositoryName,
+			localManifests:       localManifests, // Options?
+			remoteManifests:      remoteManifests,
+			ctx:                  ctx,
+			scheduler:            pr.scheduler,
+			authChallenger:       pr.authChallenger,
 		},
-		name: name,
+		localRepositoryName: localRepositoryName,
 		tags: &proxyTagService{
 			localTags:      localRepo.Tags(ctx),
 			remoteTags:     remoteRepo.Tags(ctx),
@@ -187,6 +214,57 @@ func (pr *proxyingRegistry) Blobs() distribution.BlobEnumerator {
 
 func (pr *proxyingRegistry) BlobStatter() distribution.BlobStatter {
 	return pr.embedded.BlobStatter()
+}
+
+func (pr *proxyingRegistry) getRemoteRepositoryName(name reference.Named) (reference.Named, error) {
+	repoName := name.String()
+
+	// If localPathAlias is empty, no changes to the remote repository
+	if pr.localPathAlias == "" {
+		return name, nil
+	}
+
+	// If localPathAlias is not empty, replace it with remotePathOnly
+	if strings.HasPrefix(repoName, pr.localPathAlias) {
+		newRepoName := pr.remotePathOnly + strings.TrimPrefix(repoName, pr.localPathAlias)
+		remoteRepositoryName, err := reference.WithName(newRepoName)
+		if err != nil {
+			return nil, distribution.ErrRepositoryNameInvalid{
+				Name:   newRepoName,
+				Reason: err,
+			}
+		}
+		return remoteRepositoryName, nil
+	}
+
+	return name, nil
+}
+
+func (pr *proxyingRegistry) repositoryIsAllowed(name reference.Named) (bool, error) {
+	// Skip if remotePathOnly is empty
+	if pr.remotePathOnly == "" {
+		return true, nil
+	}
+
+	repoName := name.String()
+	allowedPrefix := pr.remotePathOnly
+
+	// If localPathAlias is not empty, use it as the prefix
+	if pr.localPathAlias != "" {
+		allowedPrefix = pr.localPathAlias
+	}
+
+	// Check if the repository name has the allowed prefix
+	if !strings.HasPrefix(repoName, allowedPrefix) {
+		return false, distribution.ErrRepositoryUnknownWithReason{
+			Name: repoName,
+			Reason: fmt.Errorf(
+				"allowed prefix is '%s'",
+				allowedPrefix,
+			),
+		}
+	}
+	return true, nil
 }
 
 // authChallenger encapsulates a request to the upstream to establish credential challenges
@@ -240,10 +318,10 @@ func (r *remoteAuthChallenger) tryEstablishChallenges(ctx context.Context) error
 // locally, or pulling it through from a remote and caching it locally if it doesn't
 // already exist
 type proxiedRepository struct {
-	blobStore distribution.BlobStore
-	manifests distribution.ManifestService
-	name      reference.Named
-	tags      distribution.TagService
+	blobStore           distribution.BlobStore
+	manifests           distribution.ManifestService
+	localRepositoryName reference.Named
+	tags                distribution.TagService
 }
 
 func (pr *proxiedRepository) Manifests(ctx context.Context, options ...distribution.ManifestServiceOption) (distribution.ManifestService, error) {
@@ -255,7 +333,7 @@ func (pr *proxiedRepository) Blobs(ctx context.Context) distribution.BlobStore {
 }
 
 func (pr *proxiedRepository) Named() reference.Named {
-	return pr.name
+	return pr.localRepositoryName
 }
 
 func (pr *proxiedRepository) Tags(ctx context.Context) distribution.TagService {

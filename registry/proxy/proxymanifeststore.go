@@ -15,12 +15,13 @@ import (
 const repositoryTTL = 24 * 7 * time.Hour
 
 type proxyManifestStore struct {
-	ctx             context.Context
-	localManifests  distribution.ManifestService
-	remoteManifests distribution.ManifestService
-	repositoryName  reference.Named
-	scheduler       *scheduler.TTLExpirationScheduler
-	authChallenger  authChallenger
+	ctx                  context.Context
+	localManifests       distribution.ManifestService
+	remoteManifests      distribution.ManifestService
+	localRepositoryName  reference.Named
+	remoteRepositoryName reference.Named
+	scheduler            *scheduler.TTLExpirationScheduler
+	authChallenger       authChallenger
 }
 
 var _ distribution.ManifestService = &proxyManifestStore{}
@@ -71,7 +72,7 @@ func (pms proxyManifestStore) Get(ctx context.Context, dgst digest.Digest, optio
 		}
 
 		// Schedule the manifest blob for removal
-		repoBlob, err := reference.WithDigest(pms.repositoryName, dgst)
+		repoBlob, err := reference.WithDigest(pms.localRepositoryName, dgst)
 		if err != nil {
 			dcontext.GetLogger(ctx).Errorf("Error creating reference: %s", err)
 			return nil, err

@@ -117,3 +117,14 @@ type ErrManifestNameInvalid struct {
 func (err ErrManifestNameInvalid) Error() string {
 	return fmt.Sprintf("manifest name %q invalid: %v", err.Name, err.Reason)
 }
+
+// ErrRepositoryUnknownWithReason is returned if the named repository is not known by
+// the registry, along with the reason for this status.
+type ErrRepositoryUnknownWithReason struct {
+	Name   string
+	Reason error
+}
+
+func (err ErrRepositoryUnknownWithReason) Error() string {
+	return fmt.Sprintf("repository '%s' is not known to the registry: %v", err.Name, err.Reason)
+}
