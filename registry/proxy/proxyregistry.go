@@ -49,7 +49,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 	}
 
 	v := storage.NewVacuum(ctx, driver)
-	s := scheduler.New(ctx, driver, "/scheduler-state.json")
+	s := scheduler.New(ctx, driver, registry, "/scheduler-state.json")
 	s.OnBlobExpire(func(ref reference.Reference) error {
 		var r reference.Canonical
 		var ok bool
