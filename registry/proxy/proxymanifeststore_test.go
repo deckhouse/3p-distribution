@@ -82,8 +82,12 @@ func (m *mockChallenger) challengeManager() challenge.Manager {
 	return nil
 }
 
-func newManifestStoreTestEnv(t *testing.T, name, tag string) *manifestStoreTestEnv {
-	nameRef, err := reference.WithName(name)
+func newManifestStoreTestEnv(t *testing.T, localName, remoteName, tag string) *manifestStoreTestEnv {
+	localNameRef, err := reference.WithName(localName)
+	if err != nil {
+		t.Fatalf("unable to parse reference: %s", err)
+	}
+	remoteNameRef, err := reference.WithName(remoteName)
 	if err != nil {
 		t.Fatalf("unable to parse reference: %s", err)
 	}
@@ -100,7 +104,7 @@ func newManifestStoreTestEnv(t *testing.T, name, tag string) *manifestStoreTestE
 	if err != nil {
 		t.Fatalf("error creating registry: %v", err)
 	}
-	truthRepo, err := truthRegistry.Repository(ctx, nameRef)
+	truthRepo, err := truthRegistry.Repository(ctx, remoteNameRef)
 	if err != nil {
 		t.Fatalf("unexpected error getting repo: %v", err)
 	}
@@ -113,7 +117,7 @@ func newManifestStoreTestEnv(t *testing.T, name, tag string) *manifestStoreTestE
 		stats:     make(map[string]int),
 	}
 
-	manifestDigest, err := populateRepo(ctx, t, truthRepo, name, tag)
+	manifestDigest, err := populateRepo(ctx, t, truthRepo, remoteName, tag)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -122,7 +126,7 @@ func newManifestStoreTestEnv(t *testing.T, name, tag string) *manifestStoreTestE
 	if err != nil {
 		t.Fatalf("error creating registry: %v", err)
 	}
-	localRepo, err := localRegistry.Repository(ctx, nameRef)
+	localRepo, err := localRegistry.Repository(ctx, localNameRef)
 	if err != nil {
 		t.Fatalf("unexpected error getting repo: %v", err)
 	}
@@ -140,12 +144,13 @@ func newManifestStoreTestEnv(t *testing.T, name, tag string) *manifestStoreTestE
 	return &manifestStoreTestEnv{
 		manifestDigest: manifestDigest,
 		manifests: proxyManifestStore{
-			ctx:             ctx,
-			localManifests:  localManifests,
-			remoteManifests: truthManifests,
-			scheduler:       s,
-			repositoryName:  nameRef,
-			authChallenger:  &mockChallenger{},
+			ctx:                  ctx,
+			localManifests:       localManifests,
+			remoteManifests:      truthManifests,
+			scheduler:            s,
+			localRepositoryName:  localNameRef,
+			remoteRepositoryName: remoteNameRef,
+			authChallenger:       &mockChallenger{},
 		},
 	}
 }
@@ -203,8 +208,9 @@ func populateRepo(ctx context.Context, t *testing.T, repository distribution.Rep
 // TestProxyManifests contains basic acceptance tests
 // for the pull-through behavior
 func TestProxyManifests(t *testing.T) {
-	name := "foo/bar"
-	env := newManifestStoreTestEnv(t, name, "latest")
+	localName := "foo/bar"
+	remoteName := "bar/foo"
+	env := newManifestStoreTestEnv(t, localName, remoteName, "latest")
 
 	localStats := env.LocalStats()
 	remoteStats := env.RemoteStats()

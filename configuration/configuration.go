@@ -650,6 +650,12 @@ type Proxy struct {
 
 	// Password of the hub user
 	Password string `yaml:"password"`
+
+	// RemotePathOnly specifies the registry path where requests are allowed to be executed
+	RemotePathOnly string `yaml:"remotepathonly"`
+
+	// LocalPathAlias renames the remote path to allow access to the registry via a local path alias
+	LocalPathAlias string `yaml:"localpathalias"`
 }
 
 // Parse parses an input configuration yaml document into a Configuration struct

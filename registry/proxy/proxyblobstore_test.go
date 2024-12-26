@@ -116,8 +116,12 @@ func (te *testEnv) RemoteStats() *map[string]int {
 }
 
 // Populate remote store and record the digests
-func makeTestEnv(t *testing.T, name string) *testEnv {
-	nameRef, err := reference.WithName(name)
+func makeTestEnv(t *testing.T, localName, remoteName string) *testEnv {
+	localNameRef, err := reference.WithName(localName)
+	if err != nil {
+		t.Fatalf("unable to parse reference: %s", err)
+	}
+	remoteNameRef, err := reference.WithName(remoteName)
 	if err != nil {
 		t.Fatalf("unable to parse reference: %s", err)
 	}
@@ -146,7 +150,7 @@ func makeTestEnv(t *testing.T, name string) *testEnv {
 	if err != nil {
 		t.Fatalf("error creating registry: %v", err)
 	}
-	localRepo, err := localRegistry.Repository(ctx, nameRef)
+	localRepo, err := localRegistry.Repository(ctx, localNameRef)
 	if err != nil {
 		t.Fatalf("unexpected error getting repo: %v", err)
 	}
@@ -162,7 +166,7 @@ func makeTestEnv(t *testing.T, name string) *testEnv {
 	if err != nil {
 		t.Fatalf("error creating registry: %v", err)
 	}
-	truthRepo, err := truthRegistry.Repository(ctx, nameRef)
+	truthRepo, err := truthRegistry.Repository(ctx, remoteNameRef)
 	if err != nil {
 		t.Fatalf("unexpected error getting repo: %v", err)
 	}
@@ -180,11 +184,12 @@ func makeTestEnv(t *testing.T, name string) *testEnv {
 	s := scheduler.New(ctx, inmemory.New(), "/scheduler-state.json")
 
 	proxyBlobStore := proxyBlobStore{
-		repositoryName: nameRef,
-		remoteStore:    truthBlobs,
-		localStore:     localBlobs,
-		scheduler:      s,
-		authChallenger: &mockChallenger{},
+		localRepositoryName:  localNameRef,
+		remoteRepositoryName: remoteNameRef,
+		remoteStore:          truthBlobs,
+		localStore:           localBlobs,
+		scheduler:            s,
+		authChallenger:       &mockChallenger{},
 	}
 
 	te := &testEnv{
@@ -225,7 +230,7 @@ func populate(t *testing.T, te *testEnv, blobCount, size, numUnique int) {
 	te.numUnique = numUnique
 }
 func TestProxyStoreGet(t *testing.T) {
-	te := makeTestEnv(t, "foo/bar")
+	te := makeTestEnv(t, "foo/bar", "bar/foo")
 
 	localStats := te.LocalStats()
 	remoteStats := te.RemoteStats()
@@ -260,7 +265,7 @@ func TestProxyStoreGet(t *testing.T) {
 }
 
 func TestProxyStoreStat(t *testing.T) {
-	te := makeTestEnv(t, "foo/bar")
+	te := makeTestEnv(t, "foo/bar", "bar/foo")
 
 	remoteBlobCount := 1
 	populate(t, te, remoteBlobCount, 10, 1)
@@ -291,7 +296,7 @@ func TestProxyStoreStat(t *testing.T) {
 }
 
 func TestProxyStoreServeHighConcurrency(t *testing.T) {
-	te := makeTestEnv(t, "foo/bar")
+	te := makeTestEnv(t, "foo/bar", "bar/foo")
 	blobSize := 200
 	blobCount := 10
 	numUnique := 1
@@ -302,7 +307,7 @@ func TestProxyStoreServeHighConcurrency(t *testing.T) {
 }
 
 func TestProxyStoreServeMany(t *testing.T) {
-	te := makeTestEnv(t, "foo/bar")
+	te := makeTestEnv(t, "foo/bar", "bar/foo")
 	blobSize := 200
 	blobCount := 10
 	numUnique := 4
@@ -314,7 +319,7 @@ func TestProxyStoreServeMany(t *testing.T) {
 
 // todo(richardscothern): blobCount must be smaller than num clients
 func TestProxyStoreServeBig(t *testing.T) {
-	te := makeTestEnv(t, "foo/bar")
+	te := makeTestEnv(t, "foo/bar", "bar/foo")
 
 	blobSize := 2 << 20
 	blobCount := 4
