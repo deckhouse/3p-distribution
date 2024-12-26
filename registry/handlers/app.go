@@ -33,6 +33,7 @@ import (
 	"github.com/docker/distribution/registry/storage"
 	memorycache "github.com/docker/distribution/registry/storage/cache/memory"
 	rediscache "github.com/docker/distribution/registry/storage/cache/redis"
+	"github.com/docker/distribution/registry/storage/driver"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	storagemiddleware "github.com/docker/distribution/registry/storage/driver/middleware"
@@ -325,6 +326,19 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 		}
 		app.isCache = true
 		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
+	} else {
+		pathToStateFile := "/scheduler-state.json"
+		if _, err := app.driver.Stat(ctx, pathToStateFile); err != nil {
+			switch err := err.(type) {
+			case driver.PathNotFoundError:
+			default:
+				panic(err.Error())
+			}
+		} else {
+			if err := app.driver.Delete(ctx, pathToStateFile); err != nil {
+				panic(err.Error())
+			}
+		}
 	}
 	var ok bool
 	app.repoRemover, ok = app.registry.(distribution.RepositoryRemover)
