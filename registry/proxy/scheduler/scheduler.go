@@ -23,8 +23,6 @@ const (
 	indexSaveFrequency = 5 * time.Second
 )
 
-var repositoryTTL = 24 * 7 * time.Hour // TTL of repository objects (1 week)
-
 // schedulerEntry represents an entry in the scheduler
 // fields are exported for serialization
 type schedulerEntry struct {
@@ -36,9 +34,10 @@ type schedulerEntry struct {
 }
 
 // New returns a new instance of the scheduler
-func New(ctx context.Context, driver driver.StorageDriver, registry distribution.Namespace, path string) *TTLExpirationScheduler {
+func New(ctx context.Context, ttl time.Duration, driver driver.StorageDriver, registry distribution.Namespace, path string) *TTLExpirationScheduler {
 	return &TTLExpirationScheduler{
 		entries:         make(map[string]*schedulerEntry),
+		ttl:             ttl,
 		registry:        registry,
 		driver:          driver,
 		pathToStateFile: path,
@@ -59,6 +58,7 @@ type TTLExpirationScheduler struct {
 	registry        distribution.Namespace
 	driver          driver.StorageDriver
 	ctx             context.Context
+	ttl             time.Duration
 	pathToStateFile string
 
 	stopped bool
@@ -397,12 +397,12 @@ func (ttles *TTLExpirationScheduler) fillStateFromStorage() error {
 	defer ttles.Unlock()
 	// Schedule TTL for all tracked manifests
 	for manifestRef := range manifestRefSet {
-		ttles.add(manifestRef, repositoryTTL, entryTypeManifest)
+		ttles.add(manifestRef, ttles.ttl, entryTypeManifest)
 	}
 
 	// Schedule TTL for all tracked blobs
 	for blobRef := range blobRefSet {
-		ttles.add(blobRef, repositoryTTL, entryTypeBlob)
+		ttles.add(blobRef, ttles.ttl, entryTypeBlob)
 	}
 	return nil
 }

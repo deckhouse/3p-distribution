@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -21,10 +22,13 @@ import (
 	"github.com/docker/distribution/registry/storage/driver"
 )
 
+var repositoryTTL = 24 * 7 * time.Hour
+
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
 	embedded       distribution.Namespace // provides local registry functionality
 	scheduler      *scheduler.TTLExpirationScheduler
+	ttl            *time.Duration
 	remoteURL      url.URL
 	authChallenger authChallenger
 	remotePathOnly string
@@ -48,62 +52,76 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		return nil, err
 	}
 
+	var s *scheduler.TTLExpirationScheduler
+	var ttl *time.Duration
+	if config.TTL == nil {
+		// Default TTL is 7 days
+		ttl = &repositoryTTL
+	} else if *config.TTL > 0 {
+		ttl = config.TTL
+	} else {
+		// TTL is disabled, never expire
+		ttl = nil
+	}
+
 	v := storage.NewVacuum(ctx, driver)
-	s := scheduler.New(ctx, driver, registry, "/scheduler-state.json")
-	s.OnBlobExpire(func(ref reference.Reference) error {
-		var r reference.Canonical
-		var ok bool
-		if r, ok = ref.(reference.Canonical); !ok {
-			return fmt.Errorf("unexpected reference type : %T", ref)
-		}
+	if ttl != nil {
+		s = scheduler.New(ctx, *ttl, driver, registry, "/scheduler-state.json")
+		s.OnBlobExpire(func(ref reference.Reference) error {
+			var r reference.Canonical
+			var ok bool
+			if r, ok = ref.(reference.Canonical); !ok {
+				return fmt.Errorf("unexpected reference type : %T", ref)
+			}
 
-		repo, err := registry.Repository(ctx, r)
+			repo, err := registry.Repository(ctx, r)
+			if err != nil {
+				return err
+			}
+
+			blobs := repo.Blobs(ctx)
+
+			// Clear the repository reference and descriptor caches
+			err = blobs.Delete(ctx, r.Digest())
+			if err != nil {
+				return err
+			}
+
+			err = v.RemoveBlob(r.Digest().String())
+			if err != nil {
+				return err
+			}
+
+			return nil
+		})
+
+		s.OnManifestExpire(func(ref reference.Reference) error {
+			var r reference.Canonical
+			var ok bool
+			if r, ok = ref.(reference.Canonical); !ok {
+				return fmt.Errorf("unexpected reference type : %T", ref)
+			}
+
+			repo, err := registry.Repository(ctx, r)
+			if err != nil {
+				return err
+			}
+
+			manifests, err := repo.Manifests(ctx)
+			if err != nil {
+				return err
+			}
+			err = manifests.Delete(ctx, r.Digest())
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+
+		err = s.Start()
 		if err != nil {
-			return err
+			return nil, err
 		}
-
-		blobs := repo.Blobs(ctx)
-
-		// Clear the repository reference and descriptor caches
-		err = blobs.Delete(ctx, r.Digest())
-		if err != nil {
-			return err
-		}
-
-		err = v.RemoveBlob(r.Digest().String())
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-	s.OnManifestExpire(func(ref reference.Reference) error {
-		var r reference.Canonical
-		var ok bool
-		if r, ok = ref.(reference.Canonical); !ok {
-			return fmt.Errorf("unexpected reference type : %T", ref)
-		}
-
-		repo, err := registry.Repository(ctx, r)
-		if err != nil {
-			return err
-		}
-
-		manifests, err := repo.Manifests(ctx)
-		if err != nil {
-			return err
-		}
-		err = manifests.Delete(ctx, r.Digest())
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-
-	err = s.Start()
-	if err != nil {
-		return nil, err
 	}
 
 	cs, err := configureAuth(config.Username, config.Password, config.RemoteURL)
@@ -114,6 +132,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 	return &proxyingRegistry{
 		embedded:       registry,
 		scheduler:      s,
+		ttl:            ttl,
 		remoteURL:      *remoteURL,
 		remotePathOnly: remotePathOnly,
 		localPathAlias: localPathAlias,
@@ -186,6 +205,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 			localStore:           localRepo.Blobs(ctx),
 			remoteStore:          remoteRepo.Blobs(ctx),
 			scheduler:            pr.scheduler,
+			ttl:                  pr.ttl,
 			localRepositoryName:  localRepositoryName,
 			remoteRepositoryName: remoteRepositoryName,
 			authChallenger:       pr.authChallenger,
@@ -197,6 +217,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 			remoteManifests:      remoteManifests,
 			ctx:                  ctx,
 			scheduler:            pr.scheduler,
+			ttl:                  pr.ttl,
 			authChallenger:       pr.authChallenger,
 		},
 		localRepositoryName: localRepositoryName,
