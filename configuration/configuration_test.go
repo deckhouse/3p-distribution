@@ -88,11 +88,6 @@ var configStruct = Configuration{
 			ClientCAs    []string `yaml:"clientcas,omitempty"`
 			MinimumTLS   string   `yaml:"minimumtls,omitempty"`
 			CipherSuites []string `yaml:"ciphersuites,omitempty"`
-			LetsEncrypt  struct {
-				CacheFile string   `yaml:"cachefile,omitempty"`
-				Email     string   `yaml:"email,omitempty"`
-				Hosts     []string `yaml:"hosts,omitempty"`
-			} `yaml:"letsencrypt,omitempty"`
 		} `yaml:"tls,omitempty"`
 		Headers http.Header `yaml:"headers,omitempty"`
 		Debug   struct {
@@ -112,11 +107,6 @@ var configStruct = Configuration{
 			ClientCAs    []string `yaml:"clientcas,omitempty"`
 			MinimumTLS   string   `yaml:"minimumtls,omitempty"`
 			CipherSuites []string `yaml:"ciphersuites,omitempty"`
-			LetsEncrypt  struct {
-				CacheFile string   `yaml:"cachefile,omitempty"`
-				Email     string   `yaml:"email,omitempty"`
-				Hosts     []string `yaml:"hosts,omitempty"`
-			} `yaml:"letsencrypt,omitempty"`
 		}{
 			ClientCAs: []string{"/path/to/ca.pem"},
 		},

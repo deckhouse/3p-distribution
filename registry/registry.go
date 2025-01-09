@@ -13,8 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"rsc.io/letsencrypt"
-
 	logrus_bugsnag "github.com/Shopify/logrus-bugsnag"
 
 	logstash "github.com/bshuster-repo/logrus-logstash-hook"
@@ -219,7 +217,7 @@ func (registry *Registry) ListenAndServe() error {
 		return err
 	}
 
-	if config.HTTP.TLS.Certificate != "" || config.HTTP.TLS.LetsEncrypt.CacheFile != "" {
+	if config.HTTP.TLS.Certificate != "" {
 		if config.HTTP.TLS.MinimumTLS == "" {
 			config.HTTP.TLS.MinimumTLS = defaultTLSVersionStr
 		}
@@ -242,29 +240,10 @@ func (registry *Registry) ListenAndServe() error {
 			CipherSuites: tlsCipherSuites,
 		}
 
-		if config.HTTP.TLS.LetsEncrypt.CacheFile != "" {
-			if config.HTTP.TLS.Certificate != "" {
-				return fmt.Errorf("cannot specify both certificate and Let's Encrypt")
-			}
-			var m letsencrypt.Manager
-			if err := m.CacheFile(config.HTTP.TLS.LetsEncrypt.CacheFile); err != nil {
-				return err
-			}
-			if !m.Registered() {
-				if err := m.Register(config.HTTP.TLS.LetsEncrypt.Email, nil); err != nil {
-					return err
-				}
-			}
-			if len(config.HTTP.TLS.LetsEncrypt.Hosts) > 0 {
-				m.SetHosts(config.HTTP.TLS.LetsEncrypt.Hosts)
-			}
-			tlsConf.GetCertificate = m.GetCertificate
-		} else {
-			tlsConf.Certificates = make([]tls.Certificate, 1)
-			tlsConf.Certificates[0], err = tls.LoadX509KeyPair(config.HTTP.TLS.Certificate, config.HTTP.TLS.Key)
-			if err != nil {
-				return err
-			}
+		tlsConf.Certificates = make([]tls.Certificate, 1)
+		tlsConf.Certificates[0], err = tls.LoadX509KeyPair(config.HTTP.TLS.Certificate, config.HTTP.TLS.Key)
+		if err != nil {
+			return err
 		}
 
 		if len(config.HTTP.TLS.ClientCAs) != 0 {

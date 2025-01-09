@@ -113,23 +113,6 @@ type Configuration struct {
 
 			// Specifies a list of cipher suites allowed
 			CipherSuites []string `yaml:"ciphersuites,omitempty"`
-
-			// LetsEncrypt is used to configuration setting up TLS through
-			// Let's Encrypt instead of manually specifying certificate and
-			// key. If a TLS certificate is specified, the Let's Encrypt
-			// section will not be used.
-			LetsEncrypt struct {
-				// CacheFile specifies cache file to use for lets encrypt
-				// certificates and keys.
-				CacheFile string `yaml:"cachefile,omitempty"`
-
-				// Email is the email to use during Let's Encrypt registration
-				Email string `yaml:"email,omitempty"`
-
-				// Hosts specifies the hosts which are allowed to obtain Let's
-				// Encrypt certificates.
-				Hosts []string `yaml:"hosts,omitempty"`
-			} `yaml:"letsencrypt,omitempty"`
 		} `yaml:"tls,omitempty"`
 
 		// Headers is a set of headers to include in HTTP responses. A common
