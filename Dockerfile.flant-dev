@@ -1,0 +1,30 @@
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+
+ARG LDFLAGS="-s -w"
+ENV CGO_ENABLED=0
+
+# Create tmp dir
+RUN mkdir -m 1777 /tmp-tmp
+RUN apk add --no-cache git make bash gnupg
+
+
+RUN mkdir -p /src
+WORKDIR /src
+COPY . .
+
+# Build binary
+ARG TARGETOS TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    make build && \
+    make binaries
+
+FROM --platform=linux/amd64 alpine:3.20
+RUN apk add --no-cache iproute2 curl vim bash ca-certificates
+
+COPY --from=builder /tmp-tmp /tmp
+COPY --from=builder /src/bin/registry /bin/registry
+COPY --from=builder /src/cmd/registry/config-dev.yml /etc/docker/registry/config.yml
+
+EXPOSE 5000
+ENTRYPOINT ["registry"]
+CMD ["serve", "/etc/docker/registry/config.yml"]
