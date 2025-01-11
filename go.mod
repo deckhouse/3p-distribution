@@ -27,7 +27,7 @@ require (
 	google.golang.org/api v0.0.0-20160322025152-9bf6e6e569ff
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
-	gopkg.in/yaml.v2 v2.2.1
+	gopkg.in/yaml.v2 v2.4.0
 )
 
 require (
