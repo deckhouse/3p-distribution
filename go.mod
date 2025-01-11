@@ -13,8 +13,8 @@ require (
 	github.com/docker/go-metrics v0.0.0-20180209012529-399ea8c73916
 	github.com/docker/libtrust v0.0.0-20150114040149-fa567046d9b1
 	github.com/garyburd/redigo v0.0.0-20150301180006-535138d7bcd7
-	github.com/gorilla/handlers v0.0.0-20150720190736-60c7bfde3e33
-	github.com/gorilla/mux v1.3.1-0.20170228224354-599cba5e7b61
+	github.com/gorilla/handlers v1.5.2
+	github.com/gorilla/mux v1.8.1
 	github.com/mitchellh/mapstructure v0.0.0-20150528213339-482a9fd5fa83
 	github.com/ncw/swift v1.0.40
 	github.com/opencontainers/go-digest v1.0.0
@@ -38,6 +38,7 @@ require (
 	github.com/bugsnag/panicwrap v0.0.0-20151223152923-e2c28503fcd0 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/dnaeon/go-vcr v1.1.0 // indirect
+	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-ini/ini v1.21.2-0.20161120031036-2ba15ac2dc9c // indirect
 	github.com/golang/protobuf v0.0.0-20160321223353-8d92cf5fc15a // indirect
 	github.com/gorilla/context v1.1.2 // indirect
