@@ -20,7 +20,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/sirupsen/logrus v1.0.1-0.20170620144510-3d4380f53a34
-	github.com/spf13/cobra v0.0.0-20150605180824-312092086bed
+	github.com/spf13/cobra v1.8.1
 	github.com/yvasiyarov/gorelic v0.0.7-0.20141212073537-a9bba5b9ab50
 	golang.org/x/crypto v0.32.0
 	golang.org/x/oauth2 v0.25.0
@@ -42,7 +42,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-ini/ini v1.21.2-0.20161120031036-2ba15ac2dc9c // indirect
 	github.com/golang/protobuf v0.0.0-20160321223353-8d92cf5fc15a // indirect
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
 	github.com/marstr/guid v1.1.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
@@ -53,7 +53,7 @@ require (
 	github.com/prometheus/procfs v0.0.0-20180125133057-cb4147076ac7 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
-	github.com/spf13/pflag v0.0.0-20150601220040-564482062245 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/yvasiyarov/go-metrics v0.0.0-20140926110328-57bccd1ccd43 // indirect
 	github.com/yvasiyarov/newrelic_platform_go v0.0.0-20140908184405-b21fdbd4370f // indirect
