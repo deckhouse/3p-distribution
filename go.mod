@@ -22,8 +22,8 @@ require (
 	github.com/sirupsen/logrus v1.0.1-0.20170620144510-3d4380f53a34
 	github.com/spf13/cobra v0.0.0-20150605180824-312092086bed
 	github.com/yvasiyarov/gorelic v0.0.7-0.20141212073537-a9bba5b9ab50
-	golang.org/x/crypto v0.14.0
-	golang.org/x/oauth2 v0.0.0-20160304213135-045497edb623
+	golang.org/x/crypto v0.32.0
+	golang.org/x/oauth2 v0.25.0
 	google.golang.org/api v0.0.0-20160322025152-9bf6e6e569ff
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8
 	gopkg.in/check.v1 v1.0.0-20141024133853-64131543e789
@@ -31,6 +31,7 @@ require (
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/Azure/go-autorest v10.8.1+incompatible // indirect
 	github.com/beorn7/perks v0.0.0-20160804104726-4c0e84591b9a // indirect
 	github.com/bitly/go-simplejson v0.5.1 // indirect
@@ -41,7 +42,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-ini/ini v1.21.2-0.20161120031036-2ba15ac2dc9c // indirect
 	github.com/golang/protobuf v0.0.0-20160321223353-8d92cf5fc15a // indirect
-	github.com/gorilla/context v1.1.2 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
 	github.com/marstr/guid v1.1.0 // indirect
@@ -57,9 +57,8 @@ require (
 	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/yvasiyarov/go-metrics v0.0.0-20140926110328-57bccd1ccd43 // indirect
 	github.com/yvasiyarov/newrelic_platform_go v0.0.0-20140908184405-b21fdbd4370f // indirect
-	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/net v0.21.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
-	google.golang.org/appengine v0.0.0-20160301025000-12d5545dc1cf // indirect
+	golang.org/x/text v0.21.0 // indirect
 	google.golang.org/grpc v0.0.0-20160317175043-d3ddb4469d5a // indirect
 )
