@@ -15,7 +15,7 @@ require (
 	github.com/garyburd/redigo v0.0.0-20150301180006-535138d7bcd7
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
-	github.com/mitchellh/mapstructure v0.0.0-20150528213339-482a9fd5fa83
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/ncw/swift v1.0.40
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.2
