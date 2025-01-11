@@ -26,7 +26,7 @@ require (
 	golang.org/x/oauth2 v0.25.0
 	google.golang.org/api v0.0.0-20160322025152-9bf6e6e569ff
 	google.golang.org/cloud v0.0.0-20151119220103-975617b05ea8
-	gopkg.in/check.v1 v1.0.0-20141024133853-64131543e789
+	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/yaml.v2 v2.2.1
 )
 
@@ -44,6 +44,8 @@ require (
 	github.com/golang/protobuf v0.0.0-20160321223353-8d92cf5fc15a // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
+	github.com/kr/pretty v0.3.1 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/marstr/guid v1.1.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/mitchellh/osext v0.0.0-20151018003038-5e2d6d41470f // indirect
@@ -51,6 +53,7 @@ require (
 	github.com/prometheus/client_model v0.0.0-20171117100541-99fa1f4be8e5 // indirect
 	github.com/prometheus/common v0.0.0-20180110214958-89604d197083 // indirect
 	github.com/prometheus/procfs v0.0.0-20180125133057-cb4147076ac7 // indirect
+	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
