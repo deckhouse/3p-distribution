@@ -90,7 +90,14 @@ var configStruct = Configuration{
 			CipherSuites []string `yaml:"ciphersuites,omitempty"`
 		} `yaml:"tls,omitempty"`
 		Headers http.Header `yaml:"headers,omitempty"`
-		Debug   struct {
+		RealIP  struct {
+			Enabled    bool `yaml:"enabled,omitempty"`
+			ClientCert struct {
+				CA string `yaml:"ca,omitempty"`
+				CN string `yaml:"cn,omitempty"`
+			} `yaml:"clientcert,omitempty"`
+		} `yaml:"realip,omitempty"`
+		Debug struct {
 			Addr       string `yaml:"addr,omitempty"`
 			Prometheus struct {
 				Enabled bool   `yaml:"enabled,omitempty"`

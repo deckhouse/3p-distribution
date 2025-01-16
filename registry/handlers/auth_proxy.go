@@ -15,9 +15,8 @@ import (
 )
 
 type authProxyOptions struct {
-	Debug bool   `yaml:"debug"`
-	Url   string `yaml:"url"`
-	CA    string `yaml:"ca"`
+	Url string `yaml:"url"`
+	CA  string `yaml:"ca"`
 }
 
 func getAuthProxyOptions(data any) (params authProxyOptions, err error) {
@@ -100,18 +99,8 @@ func registerAuthProxy(app *App, config *configuration.Configuration) error {
 	}
 
 	app.router.HandleFunc("/auth/token", func(w http.ResponseWriter, r *http.Request) {
-		if opts.Debug {
-			hdr := w.Header()
-			hdr.Set("X-Auth-Realm-Host", r.Host)
-			hdr.Set("X-Auth-Proxy", "yes")
-			hdr.Set("X-Auth-Proxy-Remote", remote.String())
-			hdr.Set("X-Auth-Options", fmt.Sprintf("%+v", opts))
-		}
-
 		proxy.ServeHTTP(w, r)
 	})
-
-	proxyOpts = append(proxyOpts, fmt.Sprintf("debug: %v", opts.Debug))
 
 	l.Infof("Auth proxy enabled (%v)", strings.Join(proxyOpts, ", "))
 	return nil

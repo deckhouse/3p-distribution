@@ -163,6 +163,7 @@ func NewRegistry(ctx context.Context, config *configuration.Configuration) (*Reg
 	handler := configureReporting(app)
 	handler = alive("/", handler)
 	handler = health.Handler(handler)
+	handler = proxyHeadersHandler(ctx, config, handler)
 	handler = panicHandler(handler)
 	if !config.Log.AccessLog.Disabled {
 		handler = gorhandlers.CombinedLoggingHandler(os.Stdout, handler)
@@ -234,7 +235,7 @@ func (registry *Registry) ListenAndServe() error {
 		dcontext.GetLogger(registry.app).Infof("restricting TLS cipher suites to: %s", strings.Join(getCipherSuiteNames(tlsCipherSuites), ","))
 
 		tlsConf := &tls.Config{
-			ClientAuth:   tls.NoClientCert,
+			ClientAuth:   tls.RequestClientCert,
 			NextProtos:   nextProtos(config),
 			MinVersion:   tlsMinVersion,
 			CipherSuites: tlsCipherSuites,

@@ -11,7 +11,6 @@ import (
 
 	"github.com/docker/distribution/uuid"
 	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
 )
 
 // Common errors used with this package.
@@ -20,34 +19,9 @@ var (
 	ErrNoResponseWriterContext = errors.New("no http response in context")
 )
 
-func parseIP(ipStr string) net.IP {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		log.Warnf("invalid remote IP address: %q", ipStr)
-	}
-	return ip
-}
-
 // RemoteAddr extracts the remote address of the request, taking into
 // account proxy headers.
 func RemoteAddr(r *http.Request) string {
-	if prior := r.Header.Get("X-Forwarded-For"); prior != "" {
-		proxies := strings.Split(prior, ",")
-		if len(proxies) > 0 {
-			remoteAddr := strings.Trim(proxies[0], " ")
-			if parseIP(remoteAddr) != nil {
-				return remoteAddr
-			}
-		}
-	}
-	// X-Real-Ip is less supported, but worth checking in the
-	// absence of X-Forwarded-For
-	if realIP := r.Header.Get("X-Real-Ip"); realIP != "" {
-		if parseIP(realIP) != nil {
-			return realIP
-		}
-	}
-
 	return r.RemoteAddr
 }
 

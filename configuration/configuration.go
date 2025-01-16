@@ -121,6 +121,15 @@ type Configuration struct {
 		// the values are the associated header payloads.
 		Headers http.Header `yaml:"headers,omitempty"`
 
+		// RealIP configures reverse proxy real ip headers support (X-Forwarded-For, RealIP, etc)
+		RealIP struct {
+			Enabled    bool `yaml:"enabled,omitempty"`
+			ClientCert struct {
+				CA string `yaml:"ca,omitempty"`
+				CN string `yaml:"cn,omitempty"`
+			} `yaml:"clientcert,omitempty"`
+		} `yaml:"realip,omitempty"`
+
 		// Debug configures the http debug interface, if specified. This can
 		// include services such as pprof, expvar and other data that should
 		// not be exposed externally. Left disabled by default.
