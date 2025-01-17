@@ -1,6 +1,7 @@
-package handlers
+package registry
 
 import (
+	"context"
 	"crypto/x509"
 	"fmt"
 	"net/http"
@@ -34,32 +35,40 @@ func getAuthProxyOptions(data any) (params authProxyOptions, err error) {
 	return
 }
 
-func registerAuthProxy(app *App, config *configuration.Configuration) error {
-	l := dcontext.GetLogger(app)
+func authProxyHandler(ctx context.Context, config *configuration.Configuration, h http.Handler) http.Handler {
+	l := dcontext.GetLogger(ctx)
 	if config.Auth.Type() != "token" {
 		l.Info("Auth type is not token, auth proxy disabled")
-		return nil
+		return h
 	}
 
 	params, ok := config.Auth.Parameters()["proxy"]
 	if !ok || params == nil {
 		l.Info("Auth proxy disabled: config not found")
-		return nil
+		return h
 	}
 
 	opts, err := getAuthProxyOptions(params)
 	if err != nil {
-		return fmt.Errorf("cannot get auth proxy options: %v", err)
+		l.
+			WithError(err).
+			Fatalln("Cannot get auth proxy options")
+
+		return h
 	}
 
 	if opts.Url == "" {
 		l.Info("Auth proxy disabled: url not set")
-		return nil
+		return h
 	}
 
 	remote, err := url.Parse(opts.Url)
 	if err != nil {
-		return fmt.Errorf("cannot parse auth proxy uri: %w", err)
+		l.
+			WithError(err).
+			Fatalln("Cannot parse auth proxy URL")
+
+		return h
 	}
 
 	proxyOpts := []string{
@@ -71,12 +80,20 @@ func registerAuthProxy(app *App, config *configuration.Configuration) error {
 	if opts.CA != "" {
 		certPool, err := x509.SystemCertPool()
 		if err != nil {
-			return fmt.Errorf("cannot load auth proxy system CAs pool: %w", err)
+			l.
+				WithError(err).
+				Fatalln("Cannot load auth proxy system CAs pool")
+
+			return h
 		}
 
 		pem, err := os.ReadFile(opts.CA)
 		if err != nil {
-			return fmt.Errorf("cannot load auth proxy CA file %v error: %w", opts.CA, err)
+			l.
+				WithError(err).
+				Fatalf("Cannot load auth proxy CA file %v", opts.CA)
+
+			return h
 		}
 
 		certPool.AppendCertsFromPEM(pem)
@@ -98,10 +115,16 @@ func registerAuthProxy(app *App, config *configuration.Configuration) error {
 		Transport: transport,
 	}
 
-	app.router.HandleFunc("/auth/token", func(w http.ResponseWriter, r *http.Request) {
-		proxy.ServeHTTP(w, r)
+	ret := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/token" {
+			proxy.ServeHTTP(w, r)
+			return
+		}
+
+		h.ServeHTTP(w, r)
 	})
 
 	l.Infof("Auth proxy enabled (%v)", strings.Join(proxyOpts, ", "))
-	return nil
+
+	return ret
 }

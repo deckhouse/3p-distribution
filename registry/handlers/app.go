@@ -112,12 +112,6 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	app.register(v2.RouteNameBlobUpload, blobUploadDispatcher)
 	app.register(v2.RouteNameBlobUploadChunk, blobUploadDispatcher)
 
-	var err error
-	err = registerAuthProxy(app, config)
-	if err != nil {
-		panic(err)
-	}
-
 	// override the storage driver's UA string for registry outbound HTTP requests
 	storageParams := config.Storage.Parameters()
 	if storageParams == nil {
@@ -125,6 +119,7 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	}
 	storageParams["useragent"] = fmt.Sprintf("docker-distribution/%s %s", version.Version, runtime.Version())
 
+	var err error
 	app.driver, err = factory.Create(config.Storage.Type(), storageParams)
 	if err != nil {
 		// TODO(stevvooe): Move the creation of a service into a protected

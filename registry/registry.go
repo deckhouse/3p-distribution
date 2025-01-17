@@ -163,6 +163,7 @@ func NewRegistry(ctx context.Context, config *configuration.Configuration) (*Reg
 	handler := configureReporting(app)
 	handler = alive("/", handler)
 	handler = health.Handler(handler)
+	handler = authProxyHandler(ctx, config, handler)
 	handler = proxyHeadersHandler(ctx, config, handler)
 	handler = panicHandler(handler)
 	if !config.Log.AccessLog.Disabled {
