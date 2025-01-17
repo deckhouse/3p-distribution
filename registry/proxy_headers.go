@@ -54,6 +54,9 @@ func proxyHeadersHandler(ctx context.Context, config *configuration.Configuratio
 
 				if _, err := cert.Verify(x509.VerifyOptions{
 					Roots: certPool,
+					KeyUsages: []x509.ExtKeyUsage{
+						x509.ExtKeyUsageClientAuth,
+					},
 				}); err != nil {
 					continue
 				}
