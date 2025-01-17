@@ -107,6 +107,10 @@ func authProxyHandler(ctx context.Context, config *configuration.Configuration, 
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetXForwarded()
 
+			if r.In.URL.Scheme == "https" || r.In.URL.Scheme == "http" {
+				r.Out.Header.Set("X-Forwarded-Proto", r.In.URL.Scheme)
+			}
+
 			r.SetURL(remote)
 			r.Out.URL.Path = remote.Path
 
