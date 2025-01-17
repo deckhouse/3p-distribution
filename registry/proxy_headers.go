@@ -20,7 +20,7 @@ func proxyHeadersHandler(ctx context.Context, config *configuration.Configuratio
 
 	if !cfg.Enabled {
 		l.Info("Reverse proxy real IP headers support disabled")
-		return nil
+		return h
 	}
 
 	var filters []func(r *http.Request) bool
@@ -31,7 +31,13 @@ func proxyHeadersHandler(ctx context.Context, config *configuration.Configuratio
 
 		pem, err := os.ReadFile(cfg.ClientCert.CA)
 		if err != nil {
-			panic(fmt.Errorf("cannot load RealIP resolver CA file %v error: %w", cfg.ClientCert.CA, err))
+			l.
+				WithError(err).
+				Fatalf(
+					"Cannot load reverse proxy real IP headers support client cert validation CA file %v",
+					cfg.ClientCert.CA,
+				)
+			return h
 		}
 
 		certPool.AppendCertsFromPEM(pem)
