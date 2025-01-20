@@ -35,10 +35,10 @@ func (c credentials) SetRefreshToken(u *url.URL, service, token string) {
 }
 
 // configureAuth stores credentials for challenge responses
-func configureAuth(username, password, remoteURL string) (auth.CredentialStore, error) {
+func configureAuth(username, password, remoteURL string, httpClient *http.Client) (auth.CredentialStore, error) {
 	creds := map[string]userpass{}
 
-	authURLs, err := getAuthURLs(remoteURL)
+	authURLs, err := getAuthURLs(remoteURL, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -54,10 +54,10 @@ func configureAuth(username, password, remoteURL string) (auth.CredentialStore, 
 	return credentials{creds: creds}, nil
 }
 
-func getAuthURLs(remoteURL string) ([]string, error) {
+func getAuthURLs(remoteURL string, httpClient *http.Client) ([]string, error) {
 	authURLs := []string{}
 
-	resp, err := http.Get(remoteURL + "/v2/")
+	resp, err := httpClient.Get(remoteURL + "/v2/")
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +72,8 @@ func getAuthURLs(remoteURL string) ([]string, error) {
 	return authURLs, nil
 }
 
-func ping(manager challenge.Manager, endpoint, versionHeader string) error {
-	resp, err := http.Get(endpoint)
+func ping(manager challenge.Manager, endpoint, versionHeader string, httpClient *http.Client) error {
+	resp, err := httpClient.Get(endpoint)
 	if err != nil {
 		return err
 	}

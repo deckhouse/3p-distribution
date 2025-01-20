@@ -2,9 +2,12 @@ package proxy
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +33,8 @@ type proxyingRegistry struct {
 	scheduler      *scheduler.TTLExpirationScheduler
 	ttl            *time.Duration
 	remoteURL      url.URL
+	httpClient     *http.Client
+	httpTransport  *http.Transport
 	authChallenger authChallenger
 	remotePathOnly string
 	localPathAlias string
@@ -124,7 +129,31 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		}
 	}
 
-	cs, err := configureAuth(config.Username, config.Password, config.RemoteURL)
+	var tlsConfig *tls.Config
+	if config.RootCA != nil {
+		rootCAPath := *config.RootCA
+		rootCA, err := os.ReadFile(rootCAPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read the Root CA file at %v: %w", rootCAPath, err)
+		}
+
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(rootCA) {
+			return nil, fmt.Errorf("failed to add the Root CA file to the cert pool %v", rootCAPath)
+		}
+
+		tlsConfig = &tls.Config{
+			RootCAs:            certPool,
+		}
+	}	
+
+	httpTransport := http.DefaultTransport.(*http.Transport)
+	httpTransport.TLSClientConfig = tlsConfig
+	httpClient := &http.Client{
+		Transport: httpTransport,
+	}
+
+	cs, err := configureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -134,12 +163,15 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		scheduler:      s,
 		ttl:            ttl,
 		remoteURL:      *remoteURL,
+		httpClient:     httpClient,
+		httpTransport:  httpTransport,
 		remotePathOnly: remotePathOnly,
 		localPathAlias: localPathAlias,
 		authChallenger: &remoteAuthChallenger{
-			remoteURL: *remoteURL,
-			cm:        challenge.NewSimpleManager(),
-			cs:        cs,
+			remoteURL:  *remoteURL,
+			httpClient: httpClient,
+			cm:         challenge.NewSimpleManager(),
+			cs:         cs,
 		},
 	}, nil
 }
@@ -166,7 +198,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 	c := pr.authChallenger
 
 	tkopts := auth.TokenHandlerOptions{
-		Transport:   http.DefaultTransport,
+		Transport:   pr.httpTransport,
 		Credentials: c.credentialStore(),
 		Scopes: []auth.Scope{
 			auth.RepositoryScope{
@@ -177,7 +209,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		Logger: dcontext.GetLogger(ctx),
 	}
 
-	tr := transport.NewTransport(http.DefaultTransport,
+	tr := transport.NewTransport(pr.httpTransport,
 		auth.NewAuthorizer(c.challengeManager(),
 			auth.NewTokenHandlerWithOptions(tkopts)))
 
@@ -296,7 +328,8 @@ type authChallenger interface {
 }
 
 type remoteAuthChallenger struct {
-	remoteURL url.URL
+	remoteURL  url.URL
+	httpClient *http.Client
 	sync.Mutex
 	cm challenge.Manager
 	cs auth.CredentialStore
@@ -327,7 +360,7 @@ func (r *remoteAuthChallenger) tryEstablishChallenges(ctx context.Context) error
 	}
 
 	// establish challenge type with upstream
-	if err := ping(r.cm, remoteURL.String(), challengeHeader); err != nil {
+	if err := ping(r.cm, remoteURL.String(), challengeHeader, r.httpClient); err != nil {
 		return err
 	}
 
