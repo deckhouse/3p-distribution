@@ -649,8 +649,8 @@ type Proxy struct {
 	// LocalPathAlias renames the remote path to allow access to the registry via a local path alias
 	LocalPathAlias string `yaml:"localpathalias"`
 
-	// RootCA specifies the path to the custom Root Certificate Authority (CA) file for the remote registry (RemoteURL)
-	RootCA *string `yaml:"rootca"`
+	// CA specifies the path to the custom CA file for the remote registry (RemoteURL)
+	CA *string `yaml:"ca,omitempty"`
 
 	// TTL is the expiry time of the content and will be cleaned up when it expires
 	// if not set, defaults to 7 * 24 hours

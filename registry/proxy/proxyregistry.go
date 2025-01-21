@@ -130,22 +130,21 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 	}
 
 	var tlsConfig *tls.Config
-	if config.RootCA != nil {
-		rootCAPath := *config.RootCA
-		rootCA, err := os.ReadFile(rootCAPath)
+	if config.CA != nil {
+		caPath := *config.CA
+		ca, err := os.ReadFile(caPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read the Root CA file at %v: %w", rootCAPath, err)
+			return nil, fmt.Errorf("failed to read the CA file at %v: %w", caPath, err)
 		}
 
 		certPool := x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(rootCA) {
-			return nil, fmt.Errorf("failed to add the Root CA file to the cert pool %v", rootCAPath)
+		if !certPool.AppendCertsFromPEM(ca) {
+			return nil, fmt.Errorf("failed to add the CA file to the cert pool %v", caPath)
 		}
-
 		tlsConfig = &tls.Config{
-			RootCAs:            certPool,
+			RootCAs: certPool,
 		}
-	}	
+	}
 
 	httpTransport := http.DefaultTransport.(*http.Transport)
 	httpTransport.TLSClientConfig = tlsConfig
