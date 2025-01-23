@@ -146,7 +146,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		}
 	}
 
-	httpTransport := http.DefaultTransport.(*http.Transport)
+	httpTransport := http.DefaultTransport.(*http.Transport).Clone()
 	httpTransport.TLSClientConfig = tlsConfig
 	httpClient := &http.Client{
 		Transport: httpTransport,
