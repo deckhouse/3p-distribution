@@ -5,33 +5,18 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"sync"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
-	dcontext "github.com/docker/distribution/context"
-	"github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/opencontainers/go-digest"
 )
 
 type proxyBlobStore struct {
-	localStore           distribution.BlobStore
-	remoteStore          distribution.BlobService
-	scheduler            *scheduler.TTLExpirationScheduler
-	ttl                  *time.Duration
-	localRepositoryName  reference.Named
-	remoteRepositoryName reference.Named
-	authChallenger       authChallenger
+	remoteStore    distribution.BlobService
+	authChallenger authChallenger
 }
 
 var _ distribution.BlobStore = &proxyBlobStore{}
-
-// inflight tracks currently downloading blobs
-var inflight = make(map[digest.Digest]struct{})
-
-// mu protects inflight
-var mu sync.Mutex
 
 func setResponseHeaders(w http.ResponseWriter, length int64, mediaType string, digest digest.Digest) {
 	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
@@ -67,112 +52,16 @@ func (pbs *proxyBlobStore) copyContent(ctx context.Context, dgst digest.Digest, 
 	return desc, nil
 }
 
-func (pbs *proxyBlobStore) serveLocal(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) (bool, error) {
-	localDesc, err := pbs.localStore.Stat(ctx, dgst)
-	if err != nil {
-		// Stat can report a zero sized file here if it's checked between creation
-		// and population.  Return nil error, and continue
-		return false, nil
-	}
-
-	if err == nil {
-		proxyMetrics.BlobPush(uint64(localDesc.Size))
-		return true, pbs.localStore.ServeBlob(ctx, w, r, dgst)
-	}
-
-	return false, nil
-
-}
-
-func (pbs *proxyBlobStore) storeLocal(ctx context.Context, dgst digest.Digest) error {
-	defer func() {
-		mu.Lock()
-		delete(inflight, dgst)
-		mu.Unlock()
-	}()
-
-	var desc distribution.Descriptor
-	var err error
-	var bw distribution.BlobWriter
-
-	bw, err = pbs.localStore.Create(ctx)
-	if err != nil {
-		return err
-	}
-
-	desc, err = pbs.copyContent(ctx, dgst, bw)
-	if err != nil {
-		return err
-	}
-
-	_, err = bw.Commit(ctx, desc)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) error {
-	served, err := pbs.serveLocal(ctx, w, r, dgst)
-	if err != nil {
-		dcontext.GetLogger(ctx).Errorf("Error serving blob from local storage: %s", err.Error())
-		return err
-	}
-
-	if served {
-		return nil
-	}
-
 	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
 		return err
 	}
 
-	mu.Lock()
-	_, ok := inflight[dgst]
-	if ok {
-		mu.Unlock()
-		_, err := pbs.copyContent(ctx, dgst, w)
-		return err
-	}
-	inflight[dgst] = struct{}{}
-	mu.Unlock()
-
-	go func(dgst digest.Digest) {
-		if err := pbs.storeLocal(ctx, dgst); err != nil {
-			dcontext.GetLogger(ctx).Errorf("Error committing to storage: %s", err.Error())
-		}
-
-		blobRef, err := reference.WithDigest(pbs.localRepositoryName, dgst)
-		if err != nil {
-			dcontext.GetLogger(ctx).Errorf("Error creating reference: %s", err)
-			return
-		}
-
-		if pbs.scheduler != nil && pbs.ttl != nil {
-			if err := pbs.scheduler.AddBlob(blobRef, *pbs.ttl); err != nil {
-				dcontext.GetLogger(ctx).Errorf("Error adding blob: %s", err)
-			}
-		}
-	}(dgst)
-
-	_, err = pbs.copyContent(ctx, dgst, w)
-	if err != nil {
-		return err
-	}
-	return nil
+	_, err := pbs.copyContent(ctx, dgst, w)
+	return err
 }
 
 func (pbs *proxyBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
-	desc, err := pbs.localStore.Stat(ctx, dgst)
-	if err == nil {
-		return desc, err
-	}
-
-	if err != distribution.ErrBlobUnknown {
-		return distribution.Descriptor{}, err
-	}
-
 	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
 		return distribution.Descriptor{}, err
 	}
@@ -181,24 +70,15 @@ func (pbs *proxyBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distri
 }
 
 func (pbs *proxyBlobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte, error) {
-	blob, err := pbs.localStore.Get(ctx, dgst)
-	if err == nil {
-		return blob, nil
-	}
-
 	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
 		return []byte{}, err
 	}
 
-	blob, err = pbs.remoteStore.Get(ctx, dgst)
+	blob, err := pbs.remoteStore.Get(ctx, dgst)
 	if err != nil {
 		return []byte{}, err
 	}
 
-	_, err = pbs.localStore.Put(ctx, "", blob)
-	if err != nil {
-		return []byte{}, err
-	}
 	return blob, nil
 }
 

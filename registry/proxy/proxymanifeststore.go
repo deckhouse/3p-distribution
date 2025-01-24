@@ -2,36 +2,20 @@ package proxy
 
 import (
 	"context"
-	"time"
 
-	"github.com/distribution/reference"
 	"github.com/docker/distribution"
-	dcontext "github.com/docker/distribution/context"
-	"github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/opencontainers/go-digest"
 )
 
 type proxyManifestStore struct {
-	ctx                  context.Context
-	localManifests       distribution.ManifestService
-	remoteManifests      distribution.ManifestService
-	localRepositoryName  reference.Named
-	remoteRepositoryName reference.Named
-	scheduler            *scheduler.TTLExpirationScheduler
-	ttl                  *time.Duration
-	authChallenger       authChallenger
+	ctx             context.Context
+	remoteManifests distribution.ManifestService
+	authChallenger  authChallenger
 }
 
 var _ distribution.ManifestService = &proxyManifestStore{}
 
 func (pms proxyManifestStore) Exists(ctx context.Context, dgst digest.Digest) (bool, error) {
-	exists, err := pms.localManifests.Exists(ctx, dgst)
-	if err != nil {
-		return false, err
-	}
-	if exists {
-		return true, nil
-	}
 	if err := pms.authChallenger.tryEstablishChallenges(ctx); err != nil {
 		return false, err
 	}
@@ -41,48 +25,14 @@ func (pms proxyManifestStore) Exists(ctx context.Context, dgst digest.Digest) (b
 func (pms proxyManifestStore) Get(ctx context.Context, dgst digest.Digest, options ...distribution.ManifestServiceOption) (distribution.Manifest, error) {
 	// At this point `dgst` was either specified explicitly, or returned by the
 	// tagstore with the most recent association.
-	var fromRemote bool
-	manifest, err := pms.localManifests.Get(ctx, dgst, options...)
-	if err != nil {
-		if err := pms.authChallenger.tryEstablishChallenges(ctx); err != nil {
-			return nil, err
-		}
 
-		manifest, err = pms.remoteManifests.Get(ctx, dgst, options...)
-		if err != nil {
-			return nil, err
-		}
-		fromRemote = true
-	}
-
-	_, payload, err := manifest.Payload()
-	if err != nil {
+	if err := pms.authChallenger.tryEstablishChallenges(ctx); err != nil {
 		return nil, err
 	}
 
-	proxyMetrics.ManifestPush(uint64(len(payload)))
-	if fromRemote {
-		proxyMetrics.ManifestPull(uint64(len(payload)))
-
-		_, err = pms.localManifests.Put(ctx, manifest)
-		if err != nil {
-			return nil, err
-		}
-
-		// Schedule the manifest blob for removal
-		repoBlob, err := reference.WithDigest(pms.localRepositoryName, dgst)
-		if err != nil {
-			dcontext.GetLogger(ctx).Errorf("Error creating reference: %s", err)
-			return nil, err
-		}
-
-		if pms.scheduler != nil && pms.ttl != nil {
-			if err := pms.scheduler.AddManifest(repoBlob, *pms.ttl); err != nil {
-				dcontext.GetLogger(ctx).Errorf("Error adding manifest: %s", err)
-			}
-		}
-		// Ensure the manifest blob is cleaned up
-		//pms.scheduler.AddBlob(blobRef, repositoryTTL)
+	manifest, err := pms.remoteManifests.Get(ctx, dgst, options...)
+	if err != nil {
+		return nil, err
 	}
 
 	return manifest, err

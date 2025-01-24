@@ -30,8 +30,6 @@ var repositoryTTL = 24 * 7 * time.Hour
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
 	embedded       distribution.Namespace // provides local registry functionality
-	scheduler      *scheduler.TTLExpirationScheduler
-	ttl            *time.Duration
 	remoteURL      url.URL
 	httpClient     *http.Client
 	httpTransport  *http.Transport
@@ -159,8 +157,6 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 
 	return &proxyingRegistry{
 		embedded:       registry,
-		scheduler:      s,
-		ttl:            ttl,
 		remoteURL:      *remoteURL,
 		httpClient:     httpClient,
 		httpTransport:  httpTransport,
@@ -212,15 +208,6 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		auth.NewAuthorizer(c.challengeManager(),
 			auth.NewTokenHandlerWithOptions(tkopts)))
 
-	localRepo, err := pr.embedded.Repository(ctx, localRepositoryName)
-	if err != nil {
-		return nil, err
-	}
-	localManifests, err := localRepo.Manifests(ctx, storage.SkipLayerVerification())
-	if err != nil {
-		return nil, err
-	}
-
 	remoteRepo, err := client.NewRepository(remoteRepositoryName, pr.remoteURL.String(), tr)
 	if err != nil {
 		return nil, err
@@ -233,27 +220,16 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	return &proxiedRepository{
 		blobStore: &proxyBlobStore{
-			localStore:           localRepo.Blobs(ctx),
-			remoteStore:          remoteRepo.Blobs(ctx),
-			scheduler:            pr.scheduler,
-			ttl:                  pr.ttl,
-			localRepositoryName:  localRepositoryName,
-			remoteRepositoryName: remoteRepositoryName,
-			authChallenger:       pr.authChallenger,
+			remoteStore:    remoteRepo.Blobs(ctx),
+			authChallenger: pr.authChallenger,
 		},
 		manifests: &proxyManifestStore{
-			localRepositoryName:  localRepositoryName,
-			remoteRepositoryName: remoteRepositoryName,
-			localManifests:       localManifests, // Options?
-			remoteManifests:      remoteManifests,
-			ctx:                  ctx,
-			scheduler:            pr.scheduler,
-			ttl:                  pr.ttl,
-			authChallenger:       pr.authChallenger,
+			remoteManifests: remoteManifests,
+			ctx:             ctx,
+			authChallenger:  pr.authChallenger,
 		},
 		localRepositoryName: localRepositoryName,
 		tags: &proxyTagService{
-			localTags:      localRepo.Tags(ctx),
 			remoteTags:     remoteRepo.Tags(ctx),
 			authChallenger: pr.authChallenger,
 		},
