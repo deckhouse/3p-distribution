@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/distribution/reference"
@@ -162,7 +161,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		Transport: httpTransport,
 	}
 
-	cs, err := configureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
+	cs, err := configureTokenAuth(config.Username, config.Password, config.RemoteURL, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +219,14 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	tr := transport.NewTransport(pr.httpTransport,
 		auth.NewAuthorizer(c.challengeManager(),
-			auth.NewTokenHandlerWithOptions(tkopts)))
+			auth.NewTokenHandlerWithOptions(tkopts),
+			auth.NewBasicHandler(c.credentialStore()),
+		),
+	)
+
+	if err := c.tryEstablishChallenges(ctx); err != nil {
+		return nil, err
+	}
 
 	remoteRepo, err := client.NewRepository(remoteRepositoryName, pr.remoteURL.String(), tr)
 	if err != nil {
@@ -346,54 +352,6 @@ func (pr *proxyingRegistry) repositoryIsAllowed(name reference.Named) (bool, err
 		}
 	}
 	return true, nil
-}
-
-// authChallenger encapsulates a request to the upstream to establish credential challenges
-type authChallenger interface {
-	tryEstablishChallenges(context.Context) error
-	challengeManager() challenge.Manager
-	credentialStore() auth.CredentialStore
-}
-
-type remoteAuthChallenger struct {
-	remoteURL  url.URL
-	httpClient *http.Client
-	sync.Mutex
-	cm challenge.Manager
-	cs auth.CredentialStore
-}
-
-func (r *remoteAuthChallenger) credentialStore() auth.CredentialStore {
-	return r.cs
-}
-
-func (r *remoteAuthChallenger) challengeManager() challenge.Manager {
-	return r.cm
-}
-
-// tryEstablishChallenges will attempt to get a challenge type for the upstream if none currently exist
-func (r *remoteAuthChallenger) tryEstablishChallenges(ctx context.Context) error {
-	r.Lock()
-	defer r.Unlock()
-
-	remoteURL := r.remoteURL
-	remoteURL.Path = "/v2/"
-	challenges, err := r.cm.GetChallenges(remoteURL)
-	if err != nil {
-		return err
-	}
-
-	if len(challenges) > 0 {
-		return nil
-	}
-
-	// establish challenge type with upstream
-	if err := ping(r.cm, remoteURL.String(), challengeHeader, r.httpClient); err != nil {
-		return err
-	}
-
-	dcontext.GetLogger(ctx).Infof("Challenge established with upstream : %s %s", remoteURL, r.cm)
-	return nil
 }
 
 // proxiedRepository uses proxying blob and manifest services to serve content
