@@ -150,7 +150,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		Transport: httpTransport,
 	}
 
-	cs, err := configureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
+	cs, err := configureTokenAuth(config.Username, config.Password, config.RemoteURL, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +206,10 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	tr := transport.NewTransport(pr.httpTransport,
 		auth.NewAuthorizer(c.challengeManager(),
-			auth.NewTokenHandlerWithOptions(tkopts)))
+			auth.NewTokenHandlerWithOptions(tkopts),
+			auth.NewBasicHandler(c.credentialStore()),
+		),
+	)
 
 	remoteRepo, err := client.NewRepository(remoteRepositoryName, pr.remoteURL.String(), tr)
 	if err != nil {
@@ -339,7 +342,7 @@ func (r *remoteAuthChallenger) tryEstablishChallenges(ctx context.Context) error
 		return err
 	}
 
-	dcontext.GetLogger(ctx).Infof("Challenge established with upstream : %s %s", remoteURL, r.cm)
+	dcontext.GetLogger(ctx).Infof("Challenge established with upstream (URL: %s, cm: %+v)\n", remoteURL.String(), r.cm)
 	return nil
 }
 
