@@ -1,4 +1,4 @@
-package proxy
+package cached
 
 import (
 	"context"
@@ -11,18 +11,42 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	dcontext "github.com/docker/distribution/context"
-	"github.com/docker/distribution/registry/proxy/scheduler"
+	proxy_auth "github.com/docker/distribution/registry/proxy/auth"
+	proxy_metrics "github.com/docker/distribution/registry/proxy/metrics"
+	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/opencontainers/go-digest"
 )
+
+func NewProxyBlobStore(params ProxyBlobStoreParams) *proxyBlobStore {
+	return &proxyBlobStore{
+		localStore:           params.LocalStore,
+		remoteStore:          params.RemoteStore,
+		scheduler:            params.Scheduler,
+		ttl:                  params.TTL,
+		localRepositoryName:  params.LocalRepositoryName,
+		remoteRepositoryName: params.RemoteRepositoryName,
+		authChallenger:       params.AuthChallenger,
+	}
+}
+
+type ProxyBlobStoreParams struct {
+	LocalStore           distribution.BlobStore
+	RemoteStore          distribution.BlobService
+	Scheduler            *proxy_scheduler.TTLExpirationScheduler
+	TTL                  *time.Duration
+	LocalRepositoryName  reference.Named
+	RemoteRepositoryName reference.Named
+	AuthChallenger       proxy_auth.AuthChallenger
+}
 
 type proxyBlobStore struct {
 	localStore           distribution.BlobStore
 	remoteStore          distribution.BlobService
-	scheduler            *scheduler.TTLExpirationScheduler
+	scheduler            *proxy_scheduler.TTLExpirationScheduler
 	ttl                  *time.Duration
 	localRepositoryName  reference.Named
 	remoteRepositoryName reference.Named
-	authChallenger       authChallenger
+	authChallenger       proxy_auth.AuthChallenger
 }
 
 var _ distribution.BlobStore = &proxyBlobStore{}
@@ -62,7 +86,7 @@ func (pbs *proxyBlobStore) copyContent(ctx context.Context, dgst digest.Digest, 
 		return distribution.Descriptor{}, err
 	}
 
-	proxyMetrics.BlobPush(uint64(desc.Size))
+	proxy_metrics.ProxyMetrics.BlobPush(uint64(desc.Size))
 
 	return desc, nil
 }
@@ -76,7 +100,7 @@ func (pbs *proxyBlobStore) serveLocal(ctx context.Context, w http.ResponseWriter
 	}
 
 	if err == nil {
-		proxyMetrics.BlobPush(uint64(localDesc.Size))
+		proxy_metrics.ProxyMetrics.BlobPush(uint64(localDesc.Size))
 		return true, pbs.localStore.ServeBlob(ctx, w, r, dgst)
 	}
 
@@ -124,7 +148,7 @@ func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter,
 		return nil
 	}
 
-	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
+	if err := pbs.authChallenger.TryEstablishChallenges(ctx); err != nil {
 		return err
 	}
 
@@ -173,7 +197,7 @@ func (pbs *proxyBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distri
 		return distribution.Descriptor{}, err
 	}
 
-	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
+	if err := pbs.authChallenger.TryEstablishChallenges(ctx); err != nil {
 		return distribution.Descriptor{}, err
 	}
 
@@ -186,7 +210,7 @@ func (pbs *proxyBlobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte,
 		return blob, nil
 	}
 
-	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
+	if err := pbs.authChallenger.TryEstablishChallenges(ctx); err != nil {
 		return []byte{}, err
 	}
 

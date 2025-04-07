@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/distribution/reference"
@@ -20,9 +19,11 @@ import (
 	"github.com/docker/distribution/registry/client/auth"
 	"github.com/docker/distribution/registry/client/auth/challenge"
 	"github.com/docker/distribution/registry/client/transport"
-	"github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/driver"
+	proxy_auth "github.com/docker/distribution/registry/proxy/auth"
+	manifests_cached "github.com/docker/distribution/registry/proxy/manifests/cached"
+	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
 )
 
 var repositoryTTL = 24 * 7 * time.Hour
@@ -30,12 +31,12 @@ var repositoryTTL = 24 * 7 * time.Hour
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
 	embedded       distribution.Namespace // provides local registry functionality
-	scheduler      *scheduler.TTLExpirationScheduler
+	scheduler      *proxy_scheduler.TTLExpirationScheduler
 	ttl            *time.Duration
 	remoteURL      url.URL
 	httpClient     *http.Client
 	httpTransport  *http.Transport
-	authChallenger authChallenger
+	authChallenger proxy_auth.AuthChallenger
 	remotePathOnly string
 	localPathAlias string
 }
@@ -57,7 +58,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		return nil, err
 	}
 
-	var s *scheduler.TTLExpirationScheduler
+	var scheduler *proxy_scheduler.TTLExpirationScheduler
 	var ttl *time.Duration
 	if config.TTL == nil {
 		// Default TTL is 7 days
@@ -69,10 +70,10 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		ttl = nil
 	}
 
-	v := storage.NewVacuum(ctx, driver)
 	if ttl != nil {
-		s = scheduler.New(ctx, *ttl, driver, registry, "/scheduler-state.json")
-		s.OnBlobExpire(func(ref reference.Reference) error {
+		vacuum := storage.NewVacuum(ctx, driver)
+		scheduler = proxy_scheduler.New(ctx, *ttl, driver, registry, "/scheduler-state.json")
+		scheduler.OnBlobExpire(func(ref reference.Reference) error {
 			var r reference.Canonical
 			var ok bool
 			if r, ok = ref.(reference.Canonical); !ok {
@@ -92,7 +93,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 				return err
 			}
 
-			err = v.RemoveBlob(r.Digest().String())
+			err = vacuum.RemoveBlob(r.Digest().String())
 			if err != nil {
 				return err
 			}
@@ -100,7 +101,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 			return nil
 		})
 
-		s.OnManifestExpire(func(ref reference.Reference) error {
+		scheduler.OnManifestExpire(func(ref reference.Reference) error {
 			var r reference.Canonical
 			var ok bool
 			if r, ok = ref.(reference.Canonical); !ok {
@@ -123,7 +124,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 			return nil
 		})
 
-		err = s.Start()
+		err = scheduler.Start()
 		if err != nil {
 			return nil, err
 		}
@@ -152,26 +153,27 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		Transport: httpTransport,
 	}
 
-	cs, err := configureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
+	cs, err := proxy_auth.ConfigureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
 	if err != nil {
 		return nil, err
 	}
 
 	return &proxyingRegistry{
 		embedded:       registry,
-		scheduler:      s,
+		scheduler:      scheduler,
 		ttl:            ttl,
 		remoteURL:      *remoteURL,
 		httpClient:     httpClient,
 		httpTransport:  httpTransport,
 		remotePathOnly: remotePathOnly,
 		localPathAlias: localPathAlias,
-		authChallenger: &remoteAuthChallenger{
-			remoteURL:  *remoteURL,
-			httpClient: httpClient,
-			cm:         challenge.NewSimpleManager(),
-			cs:         cs,
-		},
+		authChallenger: proxy_auth.NewRemoteAuthChallenger(
+			proxy_auth.RemoteAuthChallengerParams{
+				RemoteURL:  *remoteURL,
+				HttpClient: httpClient,
+				CM:         challenge.NewSimpleManager(),
+				CS:         cs,
+			}),
 	}, nil
 }
 
@@ -198,7 +200,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	tkopts := auth.TokenHandlerOptions{
 		Transport:   pr.httpTransport,
-		Credentials: c.credentialStore(),
+		Credentials: c.CredentialStore(),
 		Scopes: []auth.Scope{
 			auth.RepositoryScope{
 				Repository: remoteRepositoryName.Name(),
@@ -209,7 +211,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 	}
 
 	tr := transport.NewTransport(pr.httpTransport,
-		auth.NewAuthorizer(c.challengeManager(),
+		auth.NewAuthorizer(c.ChallengeManager(),
 			auth.NewTokenHandlerWithOptions(tkopts)))
 
 	localRepo, err := pr.embedded.Repository(ctx, localRepositoryName)
@@ -232,31 +234,35 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 	}
 
 	return &proxiedRepository{
-		blobStore: &proxyBlobStore{
-			localStore:           localRepo.Blobs(ctx),
-			remoteStore:          remoteRepo.Blobs(ctx),
-			scheduler:            pr.scheduler,
-			ttl:                  pr.ttl,
-			localRepositoryName:  localRepositoryName,
-			remoteRepositoryName: remoteRepositoryName,
-			authChallenger:       pr.authChallenger,
-		},
-		manifests: &proxyManifestStore{
-			localRepositoryName:  localRepositoryName,
-			remoteRepositoryName: remoteRepositoryName,
-			localManifests:       localManifests, // Options?
-			remoteManifests:      remoteManifests,
-			ctx:                  ctx,
-			scheduler:            pr.scheduler,
-			ttl:                  pr.ttl,
-			authChallenger:       pr.authChallenger,
-		},
+		blobStore: manifests_cached.NewProxyBlobStore(
+			manifests_cached.ProxyBlobStoreParams{
+				LocalStore:           localRepo.Blobs(ctx),
+				RemoteStore:          remoteRepo.Blobs(ctx),
+				Scheduler:            pr.scheduler,
+				TTL:                  pr.ttl,
+				LocalRepositoryName:  localRepositoryName,
+				RemoteRepositoryName: remoteRepositoryName,
+				AuthChallenger:       pr.authChallenger,
+			},
+		),
+		manifests: manifests_cached.NewProxyManifestStore(
+			manifests_cached.ProxyManifestStoreParams{
+				LocalRepositoryName:  localRepositoryName,
+				RemoteRepositoryName: remoteRepositoryName,
+				LocalManifests:       localManifests, // Options?
+				RemoteManifests:      remoteManifests,
+				Ctx:                  ctx,
+				Scheduler:            pr.scheduler,
+				TTL:                  pr.ttl,
+				AuthChallenger:       pr.authChallenger,
+			}),
 		localRepositoryName: localRepositoryName,
-		tags: &proxyTagService{
-			localTags:      localRepo.Tags(ctx),
-			remoteTags:     remoteRepo.Tags(ctx),
-			authChallenger: pr.authChallenger,
-		},
+		tags: manifests_cached.NewProxyTagService(
+			manifests_cached.ProxyTagServiceParams{
+				LocalTags:      localRepo.Tags(ctx),
+				RemoteTags:     remoteRepo.Tags(ctx),
+				AuthChallenger: pr.authChallenger,
+			}),
 	}, nil
 }
 
@@ -317,54 +323,6 @@ func (pr *proxyingRegistry) repositoryIsAllowed(name reference.Named) (bool, err
 		}
 	}
 	return true, nil
-}
-
-// authChallenger encapsulates a request to the upstream to establish credential challenges
-type authChallenger interface {
-	tryEstablishChallenges(context.Context) error
-	challengeManager() challenge.Manager
-	credentialStore() auth.CredentialStore
-}
-
-type remoteAuthChallenger struct {
-	remoteURL  url.URL
-	httpClient *http.Client
-	sync.Mutex
-	cm challenge.Manager
-	cs auth.CredentialStore
-}
-
-func (r *remoteAuthChallenger) credentialStore() auth.CredentialStore {
-	return r.cs
-}
-
-func (r *remoteAuthChallenger) challengeManager() challenge.Manager {
-	return r.cm
-}
-
-// tryEstablishChallenges will attempt to get a challenge type for the upstream if none currently exist
-func (r *remoteAuthChallenger) tryEstablishChallenges(ctx context.Context) error {
-	r.Lock()
-	defer r.Unlock()
-
-	remoteURL := r.remoteURL
-	remoteURL.Path = "/v2/"
-	challenges, err := r.cm.GetChallenges(remoteURL)
-	if err != nil {
-		return err
-	}
-
-	if len(challenges) > 0 {
-		return nil
-	}
-
-	// establish challenge type with upstream
-	if err := ping(r.cm, remoteURL.String(), challengeHeader, r.httpClient); err != nil {
-		return err
-	}
-
-	dcontext.GetLogger(ctx).Infof("Challenge established with upstream : %s %s", remoteURL, r.cm)
-	return nil
 }
 
 // proxiedRepository uses proxying blob and manifest services to serve content

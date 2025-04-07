@@ -1,4 +1,4 @@
-package proxy
+package metrics
 
 import (
 	"expvar"
@@ -48,7 +48,7 @@ func (pmc *proxyMetricsCollector) ManifestPush(bytesPushed uint64) {
 
 // proxyMetrics tracks metrics about the proxy cache.  This is
 // kept globally and made available via expvar.
-var proxyMetrics = &proxyMetricsCollector{}
+var ProxyMetrics = &proxyMetricsCollector{}
 
 func init() {
 	registry := expvar.Get("registry")
@@ -64,11 +64,11 @@ func init() {
 	}
 
 	pm.(*expvar.Map).Set("blobs", expvar.Func(func() interface{} {
-		return proxyMetrics.blobMetrics
+		return ProxyMetrics.blobMetrics
 	}))
 
 	pm.(*expvar.Map).Set("manifests", expvar.Func(func() interface{} {
-		return proxyMetrics.manifestMetrics
+		return ProxyMetrics.manifestMetrics
 	}))
 
 }

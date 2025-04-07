@@ -1,4 +1,4 @@
-package proxy
+package cached
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
-	"github.com/docker/distribution/registry/proxy/scheduler"
+	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/cache/memory"
 	"github.com/docker/distribution/registry/storage/driver/filesystem"
@@ -96,7 +96,7 @@ func (sbs statsBlobStore) Delete(ctx context.Context, dgst digest.Digest) error 
 type testEnv struct {
 	numUnique int
 	inRemote  []distribution.Descriptor
-	store     proxyBlobStore
+	store     *proxyBlobStore
 	ctx       context.Context
 }
 
@@ -180,20 +180,19 @@ func makeTestEnv(t *testing.T, localName, remoteName string) *testEnv {
 		blobs: localRepo.Blobs(ctx),
 	}
 
-	s := scheduler.New(ctx, 24*7*time.Hour, localDriver, localRegistry, "/scheduler-state.json")
-
-	proxyBlobStore := proxyBlobStore{
-		localRepositoryName:  localNameRef,
-		remoteRepositoryName: remoteNameRef,
-		remoteStore:          truthBlobs,
-		localStore:           localBlobs,
-		scheduler:            s,
-		authChallenger:       &mockChallenger{},
-	}
-
+	scheduler := proxy_scheduler.New(ctx, 24*7*time.Hour, localDriver, localRegistry, "/scheduler-state.json")
 	te := &testEnv{
-		store: proxyBlobStore,
 		ctx:   ctx,
+		store: NewProxyBlobStore(
+			ProxyBlobStoreParams{
+				LocalRepositoryName:  localNameRef,
+				RemoteRepositoryName: remoteNameRef,
+				RemoteStore:          truthBlobs,
+				LocalStore:           localBlobs,
+				Scheduler:            scheduler,
+				AuthChallenger:       &mockChallenger{},
+			},
+		),
 	}
 	return te
 }

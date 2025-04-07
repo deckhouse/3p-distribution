@@ -1,4 +1,4 @@
-package proxy
+package cached
 
 import (
 	"context"
@@ -64,11 +64,12 @@ func testProxyTagService(local, remote map[string]distribution.Descriptor) *prox
 	if remote == nil {
 		remote = make(map[string]distribution.Descriptor)
 	}
-	return &proxyTagService{
-		localTags:      &mockTagStore{mapping: local},
-		remoteTags:     &mockTagStore{mapping: remote},
-		authChallenger: &mockChallenger{},
-	}
+	return NewProxyTagService(
+		ProxyTagServiceParams{
+			LocalTags:      &mockTagStore{mapping: local},
+			RemoteTags:     &mockTagStore{mapping: remote},
+			AuthChallenger: &mockChallenger{},
+		})
 }
 
 func TestGet(t *testing.T) {

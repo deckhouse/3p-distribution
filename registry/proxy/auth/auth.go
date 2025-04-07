@@ -1,4 +1,4 @@
-package proxy
+package auth
 
 import (
 	"net/http"
@@ -34,8 +34,8 @@ func (c credentials) RefreshToken(u *url.URL, service string) string {
 func (c credentials) SetRefreshToken(u *url.URL, service, token string) {
 }
 
-// configureAuth stores credentials for challenge responses
-func configureAuth(username, password, remoteURL string, httpClient *http.Client) (auth.CredentialStore, error) {
+// ConfigureAuth stores credentials for challenge responses
+func ConfigureAuth(username, password, remoteURL string, httpClient *http.Client) (auth.CredentialStore, error) {
 	creds := map[string]userpass{}
 
 	authURLs, err := getAuthURLs(remoteURL, httpClient)
@@ -72,7 +72,7 @@ func getAuthURLs(remoteURL string, httpClient *http.Client) ([]string, error) {
 	return authURLs, nil
 }
 
-func ping(manager challenge.Manager, endpoint, versionHeader string, httpClient *http.Client) error {
+func Ping(manager challenge.Manager, endpoint, versionHeader string, httpClient *http.Client) error {
 	resp, err := httpClient.Get(endpoint)
 	if err != nil {
 		return err

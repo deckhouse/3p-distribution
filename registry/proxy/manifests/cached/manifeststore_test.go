@@ -1,4 +1,4 @@
-package proxy
+package cached
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/registry/client/auth"
 	"github.com/docker/distribution/registry/client/auth/challenge"
-	"github.com/docker/distribution/registry/proxy/scheduler"
+	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/cache/memory"
 	"github.com/docker/distribution/registry/storage/driver/inmemory"
@@ -29,7 +29,7 @@ type statsManifest struct {
 
 type manifestStoreTestEnv struct {
 	manifestDigest digest.Digest // digest of the signed manifest in the local storage
-	manifests      proxyManifestStore
+	manifests      *proxyManifestStore
 }
 
 func (te manifestStoreTestEnv) LocalStats() *map[string]int {
@@ -68,18 +68,18 @@ type mockChallenger struct {
 }
 
 // Called for remote operations only
-func (m *mockChallenger) tryEstablishChallenges(context.Context) error {
+func (m *mockChallenger) TryEstablishChallenges(context.Context) error {
 	m.Lock()
 	defer m.Unlock()
 	m.count++
 	return nil
 }
 
-func (m *mockChallenger) credentialStore() auth.CredentialStore {
+func (m *mockChallenger) CredentialStore() auth.CredentialStore {
 	return nil
 }
 
-func (m *mockChallenger) challengeManager() challenge.Manager {
+func (m *mockChallenger) ChallengeManager() challenge.Manager {
 	return nil
 }
 
@@ -141,18 +141,18 @@ func newManifestStoreTestEnv(t *testing.T, localName, remoteName, tag string) *m
 		stats:     make(map[string]int),
 	}
 
-	s := scheduler.New(ctx, 24*7*time.Hour, inmemory.New(), localRegistry, "/scheduler-state.json")
+	scheduler := proxy_scheduler.New(ctx, 24*7*time.Hour, inmemory.New(), localRegistry, "/scheduler-state.json")
 	return &manifestStoreTestEnv{
 		manifestDigest: manifestDigest,
-		manifests: proxyManifestStore{
-			ctx:                  ctx,
-			localManifests:       localManifests,
-			remoteManifests:      truthManifests,
-			scheduler:            s,
-			localRepositoryName:  localNameRef,
-			remoteRepositoryName: remoteNameRef,
-			authChallenger:       &mockChallenger{},
-		},
+		manifests: NewProxyManifestStore(ProxyManifestStoreParams{
+			Ctx:                  ctx,
+			LocalManifests:       localManifests,
+			RemoteManifests:      truthManifests,
+			Scheduler:            scheduler,
+			LocalRepositoryName:  localNameRef,
+			RemoteRepositoryName: remoteNameRef,
+			AuthChallenger:       &mockChallenger{},
+		}),
 	}
 }
 

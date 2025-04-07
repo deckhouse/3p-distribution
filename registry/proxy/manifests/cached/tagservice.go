@@ -1,16 +1,31 @@
-package proxy
+package cached
 
 import (
 	"context"
 
 	"github.com/docker/distribution"
+	proxy_auth "github.com/docker/distribution/registry/proxy/auth"
 )
 
 // proxyTagService supports local and remote lookup of tags.
+func NewProxyTagService(params ProxyTagServiceParams) *proxyTagService {
+	return &proxyTagService{
+		localTags:      params.LocalTags,
+		remoteTags:     params.RemoteTags,
+		authChallenger: params.AuthChallenger,
+	}
+}
+
+type ProxyTagServiceParams struct {
+	LocalTags      distribution.TagService
+	RemoteTags     distribution.TagService
+	AuthChallenger proxy_auth.AuthChallenger
+}
+
 type proxyTagService struct {
 	localTags      distribution.TagService
 	remoteTags     distribution.TagService
-	authChallenger authChallenger
+	authChallenger proxy_auth.AuthChallenger
 }
 
 var _ distribution.TagService = proxyTagService{}
@@ -19,7 +34,7 @@ var _ distribution.TagService = proxyTagService{}
 // tag service first and then caching it locally.  If the remote is unavailable
 // the local association is returned
 func (pt proxyTagService) Get(ctx context.Context, tag string) (distribution.Descriptor, error) {
-	err := pt.authChallenger.tryEstablishChallenges(ctx)
+	err := pt.authChallenger.TryEstablishChallenges(ctx)
 	if err == nil {
 		desc, err := pt.remoteTags.Get(ctx, tag)
 		if err == nil {
@@ -51,7 +66,7 @@ func (pt proxyTagService) Untag(ctx context.Context, tag string) error {
 }
 
 func (pt proxyTagService) All(ctx context.Context) ([]string, error) {
-	err := pt.authChallenger.tryEstablishChallenges(ctx)
+	err := pt.authChallenger.TryEstablishChallenges(ctx)
 	if err == nil {
 		tags, err := pt.remoteTags.All(ctx)
 		if err == nil {
