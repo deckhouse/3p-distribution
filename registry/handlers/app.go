@@ -318,19 +318,28 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 		dcontext.GetLogger(app).Debugf("configured %q access controller", authType)
 	}
 
-	// configure as a pull through cache
-	var (
-		tllExpSchedulerRun = false
-	)
+	ttlExpSchedulerRun := false
+
+	// Configure proxy registry
 	if config.Proxy.RemoteURL != "" {
-		app.registry, tllExpSchedulerRun, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
+		var cacheEnable bool
+		app.registry, ttlExpSchedulerRun, cacheEnable, err = proxy.NewProxyRegistry(ctx, app.registry, app.driver, config.Proxy)
 		if err != nil {
 			panic(err.Error())
 		}
+		if cacheEnable {
+			dcontext.GetLogger(app).Info("Registry configured as a cached proxy to ", config.Proxy.RemoteURL)
+		} else {
+			dcontext.GetLogger(app).Info("Registry configured as a forward proxy to ", config.Proxy.RemoteURL)
+		}
+
+		// TODO:
+		// What does this parameter do?
 		app.isCache = true
-		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
 	}
-	if !tllExpSchedulerRun {
+
+	// If the TTL expiration scheduler was not started, clear its previous state
+	if !ttlExpSchedulerRun {
 		if err := proxy_scheduler.ClearTTLExpSchedulerState(ctx, app.driver); err != nil {
 			panic(err.Error())
 		}

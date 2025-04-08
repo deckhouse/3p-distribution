@@ -708,6 +708,13 @@ type Proxy struct {
 	// if not set, defaults to 7 * 24 hours
 	// If set to zero, will never expire cache
 	TTL TTL `yaml:"ttl,omitempty"`
+
+    // Cache configuration specifies whether caching is enabled or disabled for this proxy.
+    // If set to disable, the cache functionality is turned off.
+    Cache struct {
+        // Disable explicitly disables the cache for this proxy.
+        Disabled bool `yaml:"disabled,omitempty"`
+    } `yaml:"cache,omitempty"`
 }
 
 // Parse parses an input configuration yaml document into a Configuration struct
