@@ -30,10 +30,10 @@ import (
 	registrymiddleware "github.com/docker/distribution/registry/middleware/registry"
 	repositorymiddleware "github.com/docker/distribution/registry/middleware/repository"
 	"github.com/docker/distribution/registry/proxy"
+	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
 	memorycache "github.com/docker/distribution/registry/storage/cache/memory"
 	rediscache "github.com/docker/distribution/registry/storage/cache/redis"
-	"github.com/docker/distribution/registry/storage/driver"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	storagemiddleware "github.com/docker/distribution/registry/storage/driver/middleware"
@@ -319,29 +319,23 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	}
 
 	// configure as a pull through cache
-	if config.Proxy.RemoteURL == "" || (config.Proxy.TTL != nil && *config.Proxy.TTL <= 0) {
-		// Remove "/scheduler-state.json"
-		pathToStateFile := "/scheduler-state.json"
-		if _, err := app.driver.Stat(ctx, pathToStateFile); err != nil {
-			switch err := err.(type) {
-			case driver.PathNotFoundError:
-			default:
-				panic(err.Error())
-			}
-		} else {
-			if err := app.driver.Delete(ctx, pathToStateFile); err != nil {
-				panic(err.Error())
-			}
-		}
-	}
+	var (
+		tllExpSchedulerRun = false
+	)
 	if config.Proxy.RemoteURL != "" {
-		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
+		app.registry, tllExpSchedulerRun, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
 		if err != nil {
 			panic(err.Error())
 		}
 		app.isCache = true
 		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
 	}
+	if !tllExpSchedulerRun {
+		if err := proxy_scheduler.ClearTTLExpSchedulerState(ctx, app.driver); err != nil {
+			panic(err.Error())
+		}
+	}
+
 	var ok bool
 	app.repoRemover, ok = app.registry.(distribution.RepositoryRemover)
 	if !ok {

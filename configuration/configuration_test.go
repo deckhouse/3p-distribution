@@ -412,6 +412,92 @@ func (suite *ConfigSuite) TestParseExtraneousVars(c *C) {
 	c.Assert(config, DeepEquals, suite.expectedConfig)
 }
 
+// TestParseProxyTTLVar validates the parsing of TTL environment variables related to the Proxy configuration
+func (suite *ConfigSuite) TestParseProxyTTLVar(c *C) {
+	durationPointer := func(d time.Duration) *time.Duration {
+		return &d
+	}
+
+	testCases := []struct {
+		name            string
+		expected        Proxy
+		configEnvsSuite map[string]string
+	}{
+		{
+			name:            "Default TTL (nil should resolve to default)",
+			expected:        Proxy{TTL: TTL{nil}},
+			configEnvsSuite: map[string]string{},
+		},
+		{
+			name:            "Explicit default TTL (7 days)",
+			expected:        Proxy{TTL: TTL{durationPointer(7 * 24 * time.Hour)}},
+			configEnvsSuite: map[string]string{},
+		},
+		{
+			name:            "TTL set to 0s",
+			expected:        Proxy{TTL: TTL{durationPointer(0)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "0s"},
+		},
+		{
+			name:            "TTL set to 0",
+			expected:        Proxy{TTL: TTL{durationPointer(0)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "0"},
+		},
+		{
+			name:            "TTL set to -100s",
+			expected:        Proxy{TTL: TTL{durationPointer(-100 * time.Second)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "-100s"},
+		},
+		{
+			name:            "TTL set to -100",
+			expected:        Proxy{TTL: TTL{durationPointer(-100 * time.Nanosecond)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "-100"},
+		},
+		{
+			name:            "TTL set to -100.0",
+			expected:        Proxy{TTL: TTL{durationPointer(-100 * time.Nanosecond)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "-100.0"},
+		},
+		{
+			name:            "TTL set to 100 nanoseconds",
+			expected:        Proxy{TTL: TTL{durationPointer(100 * time.Nanosecond)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "100ns"},
+		},
+		{
+			name:            "TTL set to 168 hours",
+			expected:        Proxy{TTL: TTL{durationPointer(168 * time.Hour)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "168h"},
+		},
+		{
+			name:            "TTL set to 168h10m5s",
+			expected:        Proxy{TTL: TTL{durationPointer(168*time.Hour + 10*time.Minute + 5*time.Second)}},
+			configEnvsSuite: map[string]string{"REGISTRY_PROXY_TTL": "168h10m5s"},
+		},
+	}
+
+	// Iterate over test cases
+	for _, testCase := range testCases {
+		// Set environment variables for each test case
+		for envName, envValue := range testCase.configEnvsSuite {
+			err := os.Setenv(envName, envValue)
+			c.Assert(err, IsNil)
+		}
+
+		// Parse the configuration
+		config, err := Parse(bytes.NewReader([]byte(configYamlV0_1)))
+		c.Assert(err, IsNil)
+
+		// Assert that the parsed Proxy configuration matches the expected value
+		c.Assert(config.Proxy.TTL.Duration(), DeepEquals, testCase.expected.TTL.Duration())
+
+		// Unset the environment variables after the test
+		for envName := range testCase.configEnvsSuite {
+			err := os.Unsetenv(envName)
+			c.Assert(err, IsNil)
+		}
+	}
+}
+
 // TestParseEnvVarImplicitMaps validates that environment variables can set
 // values in maps that don't already exist.
 func (suite *ConfigSuite) TestParseEnvVarImplicitMaps(c *C) {

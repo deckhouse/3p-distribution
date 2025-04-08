@@ -1089,6 +1089,11 @@ func (factory *storageManifestErrDriverFactory) Create(parameters map[string]int
 	return &mockErrorDriver{
 		returnErrs: []mockErrorMapping{
 			{
+				pathMatch: "/scheduler-state.json",
+				content:   nil,
+				err:       storagedriver.PathNotFoundError{},
+			},
+			{
 				pathMatch: fmt.Sprintf("%s/_manifests/tags", repositoryWithManifestNotFound),
 				content:   nil,
 				err:       storagedriver.PathNotFoundError{},
@@ -1128,6 +1133,15 @@ func (dr *mockErrorDriver) GetContent(ctx context.Context, path string) ([]byte,
 	for _, returns := range dr.returnErrs {
 		if strings.Contains(path, returns.pathMatch) {
 			return returns.content, returns.err
+		}
+	}
+	return nil, errors.New("Unknown storage error")
+}
+
+func (dr *mockErrorDriver) Stat(ctx context.Context, path string) (storagedriver.FileInfo, error) {
+	for _, returns := range dr.returnErrs {
+		if strings.Contains(path, returns.pathMatch) {
+			return nil, returns.err
 		}
 	}
 	return nil, errors.New("Unknown storage error")

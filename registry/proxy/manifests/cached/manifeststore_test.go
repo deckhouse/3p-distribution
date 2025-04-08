@@ -141,7 +141,7 @@ func newManifestStoreTestEnv(t *testing.T, localName, remoteName, tag string) *m
 		stats:     make(map[string]int),
 	}
 
-	scheduler := proxy_scheduler.New(ctx, 24*7*time.Hour, inmemory.New(), localRegistry, "/scheduler-state.json")
+	scheduler := proxy_scheduler.NewTTLExpirationScheduler(ctx, 24*7*time.Hour, inmemory.New(), localRegistry)
 	return &manifestStoreTestEnv{
 		manifestDigest: manifestDigest,
 		manifests: NewProxyManifestStore(ProxyManifestStoreParams{

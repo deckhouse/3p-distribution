@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -22,7 +21,6 @@ func NewProxyBlobStore(params ProxyBlobStoreParams) *proxyBlobStore {
 		localStore:           params.LocalStore,
 		remoteStore:          params.RemoteStore,
 		scheduler:            params.Scheduler,
-		ttl:                  params.TTL,
 		localRepositoryName:  params.LocalRepositoryName,
 		remoteRepositoryName: params.RemoteRepositoryName,
 		authChallenger:       params.AuthChallenger,
@@ -33,7 +31,6 @@ type ProxyBlobStoreParams struct {
 	LocalStore           distribution.BlobStore
 	RemoteStore          distribution.BlobService
 	Scheduler            *proxy_scheduler.TTLExpirationScheduler
-	TTL                  *time.Duration
 	LocalRepositoryName  reference.Named
 	RemoteRepositoryName reference.Named
 	AuthChallenger       proxy_auth.AuthChallenger
@@ -43,7 +40,6 @@ type proxyBlobStore struct {
 	localStore           distribution.BlobStore
 	remoteStore          distribution.BlobService
 	scheduler            *proxy_scheduler.TTLExpirationScheduler
-	ttl                  *time.Duration
 	localRepositoryName  reference.Named
 	remoteRepositoryName reference.Named
 	authChallenger       proxy_auth.AuthChallenger
@@ -173,8 +169,8 @@ func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter,
 			return
 		}
 
-		if pbs.scheduler != nil && pbs.ttl != nil {
-			if err := pbs.scheduler.AddBlob(blobRef, *pbs.ttl); err != nil {
+		if pbs.scheduler != nil {
+			if err := pbs.scheduler.AddBlob(blobRef); err != nil {
 				dcontext.GetLogger(ctx).Errorf("Error adding blob: %s", err)
 			}
 		}

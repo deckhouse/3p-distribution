@@ -2,7 +2,6 @@ package cached
 
 import (
 	"context"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -21,7 +20,6 @@ func NewProxyManifestStore(params ProxyManifestStoreParams) *proxyManifestStore 
 		localRepositoryName:  params.LocalRepositoryName,
 		remoteRepositoryName: params.RemoteRepositoryName,
 		scheduler:            params.Scheduler,
-		ttl:                  params.TTL,
 		authChallenger:       params.AuthChallenger,
 	}
 }
@@ -33,7 +31,6 @@ type ProxyManifestStoreParams struct {
 	LocalRepositoryName  reference.Named
 	RemoteRepositoryName reference.Named
 	Scheduler            *proxy_scheduler.TTLExpirationScheduler
-	TTL                  *time.Duration
 	AuthChallenger       proxy_auth.AuthChallenger
 }
 
@@ -44,7 +41,6 @@ type proxyManifestStore struct {
 	localRepositoryName  reference.Named
 	remoteRepositoryName reference.Named
 	scheduler            *proxy_scheduler.TTLExpirationScheduler
-	ttl                  *time.Duration
 	authChallenger       proxy_auth.AuthChallenger
 }
 
@@ -102,8 +98,8 @@ func (pms proxyManifestStore) Get(ctx context.Context, dgst digest.Digest, optio
 			return nil, err
 		}
 
-		if pms.scheduler != nil && pms.ttl != nil {
-			if err := pms.scheduler.AddManifest(repoBlob, *pms.ttl); err != nil {
+		if pms.scheduler != nil {
+			if err := pms.scheduler.AddManifest(repoBlob); err != nil {
 				dcontext.GetLogger(ctx).Errorf("Error adding manifest: %s", err)
 			}
 		}

@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -19,20 +18,17 @@ import (
 	"github.com/docker/distribution/registry/client/auth"
 	"github.com/docker/distribution/registry/client/auth/challenge"
 	"github.com/docker/distribution/registry/client/transport"
-	"github.com/docker/distribution/registry/storage"
-	"github.com/docker/distribution/registry/storage/driver"
 	proxy_auth "github.com/docker/distribution/registry/proxy/auth"
 	manifests_cached "github.com/docker/distribution/registry/proxy/manifests/cached"
 	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
+	"github.com/docker/distribution/registry/storage"
+	"github.com/docker/distribution/registry/storage/driver"
 )
-
-var repositoryTTL = 24 * 7 * time.Hour
 
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
 	embedded       distribution.Namespace // provides local registry functionality
 	scheduler      *proxy_scheduler.TTLExpirationScheduler
-	ttl            *time.Duration
 	remoteURL      url.URL
 	httpClient     *http.Client
 	httpTransport  *http.Transport
@@ -42,37 +38,36 @@ type proxyingRegistry struct {
 }
 
 // NewRegistryPullThroughCache creates a registry acting as a pull through cache
-func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Namespace, driver driver.StorageDriver, config configuration.Proxy) (distribution.Namespace, error) {
+func NewRegistryPullThroughCache(
+	ctx context.Context,
+	registry distribution.Namespace,
+	driver driver.StorageDriver,
+	config configuration.Proxy,
+) (
+	proxyRegistry distribution.Namespace,
+	tllExpSchedulerRun bool,
+	err error,
+) {
 	remotePathOnly := strings.Trim(strings.TrimSpace(config.RemotePathOnly), "/")
 	localPathAlias := strings.Trim(strings.TrimSpace(config.LocalPathAlias), "/")
 
 	if remotePathOnly == "" && localPathAlias != "" {
-		return nil, fmt.Errorf(
+		err = fmt.Errorf(
 			"unknown remote path for the alias of the local path '%s', fill in the 'proxy.remotepathonly' field",
 			localPathAlias,
 		)
+		return
 	}
 
 	remoteURL, err := url.Parse(config.RemoteURL)
 	if err != nil {
-		return nil, err
+		return
 	}
 
-	var scheduler *proxy_scheduler.TTLExpirationScheduler
-	var ttl *time.Duration
-	if config.TTL == nil {
-		// Default TTL is 7 days
-		ttl = &repositoryTTL
-	} else if *config.TTL > 0 {
-		ttl = config.TTL
-	} else {
-		// TTL is disabled, never expire
-		ttl = nil
-	}
-
-	if ttl != nil {
+	var scheduler *proxy_scheduler.TTLExpirationScheduler = nil
+	if ttl := config.TTL.Duration(); ttl > 0 {
 		vacuum := storage.NewVacuum(ctx, driver)
-		scheduler = proxy_scheduler.New(ctx, *ttl, driver, registry, "/scheduler-state.json")
+		scheduler = proxy_scheduler.NewTTLExpirationScheduler(ctx, ttl, driver, registry)
 		scheduler.OnBlobExpire(func(ref reference.Reference) error {
 			var r reference.Canonical
 			var ok bool
@@ -126,21 +121,26 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 
 		err = scheduler.Start()
 		if err != nil {
-			return nil, err
+			return
+		} else {
+			tllExpSchedulerRun = true
 		}
 	}
 
 	var tlsConfig *tls.Config
 	if config.CA != nil {
-		caPath := *config.CA
-		ca, err := os.ReadFile(caPath)
+		CAPath := *config.CA
+		var CARaw []byte
+		CARaw, err = os.ReadFile(CAPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read the CA file at %v: %w", caPath, err)
+			err = fmt.Errorf("failed to read the CA file at %v: %w", CAPath, err)
+			return
 		}
 
 		certPool := x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(ca) {
-			return nil, fmt.Errorf("failed to add the CA file to the cert pool %v", caPath)
+		if !certPool.AppendCertsFromPEM(CARaw) {
+			err = fmt.Errorf("failed to add the CA file to the cert pool %v", CAPath)
+			return
 		}
 		tlsConfig = &tls.Config{
 			RootCAs: certPool,
@@ -155,13 +155,12 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 
 	cs, err := proxy_auth.ConfigureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
 	if err != nil {
-		return nil, err
+		return
 	}
 
-	return &proxyingRegistry{
+	proxyRegistry = &proxyingRegistry{
 		embedded:       registry,
 		scheduler:      scheduler,
-		ttl:            ttl,
 		remoteURL:      *remoteURL,
 		httpClient:     httpClient,
 		httpTransport:  httpTransport,
@@ -174,7 +173,8 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 				CM:         challenge.NewSimpleManager(),
 				CS:         cs,
 			}),
-	}, nil
+	}
+	return
 }
 
 func (pr *proxyingRegistry) Scope() distribution.Scope {
@@ -239,7 +239,6 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 				LocalStore:           localRepo.Blobs(ctx),
 				RemoteStore:          remoteRepo.Blobs(ctx),
 				Scheduler:            pr.scheduler,
-				TTL:                  pr.ttl,
 				LocalRepositoryName:  localRepositoryName,
 				RemoteRepositoryName: remoteRepositoryName,
 				AuthChallenger:       pr.authChallenger,
@@ -253,7 +252,6 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 				RemoteManifests:      remoteManifests,
 				Ctx:                  ctx,
 				Scheduler:            pr.scheduler,
-				TTL:                  pr.ttl,
 				AuthChallenger:       pr.authChallenger,
 			}),
 		localRepositoryName: localRepositoryName,

@@ -20,7 +20,11 @@ type expiryFunc func(reference.Reference) error
 const (
 	entryTypeBlob = iota
 	entryTypeManifest
-	indexSaveFrequency = 5 * time.Second
+)
+
+const (
+	indexSaveFrequency       = 5 * time.Second
+	ttlExpSchedulerStateFile = "/scheduler-state.json"
 )
 
 // schedulerEntry represents an entry in the scheduler
@@ -33,19 +37,48 @@ type schedulerEntry struct {
 	timer *time.Timer
 }
 
-// New returns a new instance of the scheduler
-func New(ctx context.Context, ttl time.Duration, driver driver.StorageDriver, registry distribution.Namespace, path string) *TTLExpirationScheduler {
+// NewTTLExpirationScheduler returns a new instance of the scheduler with the default state file location
+func NewTTLExpirationScheduler(ctx context.Context, ttl time.Duration, driver driver.StorageDriver, registry distribution.Namespace) *TTLExpirationScheduler {
+	return newTTLExpirationScheduler(ctx, ttl, driver, registry, ttlExpSchedulerStateFile)
+}
+
+// newTTLExpirationScheduler returns a new instance of the scheduler with the specified state file location
+func newTTLExpirationScheduler(ctx context.Context, ttl time.Duration, driver driver.StorageDriver, registry distribution.Namespace, pathToStateFile string) *TTLExpirationScheduler {
 	return &TTLExpirationScheduler{
 		entries:         make(map[string]*schedulerEntry),
 		ttl:             ttl,
 		registry:        registry,
 		driver:          driver,
-		pathToStateFile: path,
+		pathToStateFile: pathToStateFile,
 		ctx:             ctx,
 		stopped:         true,
 		doneChan:        make(chan struct{}),
 		saveTimer:       time.NewTicker(indexSaveFrequency),
 	}
+}
+
+// ClearTTLExpSchedulerState clears the state file if it exists from the default state file location
+func ClearTTLExpSchedulerState(ctx context.Context, stDriver driver.StorageDriver) error {
+	return clearTTLExpSchedulerState(ctx, stDriver, ttlExpSchedulerStateFile)
+}
+
+// clearTTLExpSchedulerState clears the state file if it exists
+func clearTTLExpSchedulerState(ctx context.Context, stDriver driver.StorageDriver, pathToStateFile string) error {
+	if stDriver == nil {
+		return nil
+	}
+	if _, err := stDriver.Stat(ctx, pathToStateFile); err != nil {
+		switch err := err.(type) {
+		case driver.PathNotFoundError:
+		default:
+			return err
+		}
+	} else {
+		if err := stDriver.Delete(ctx, pathToStateFile); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // TTLExpirationScheduler is a scheduler used to perform actions
@@ -90,7 +123,7 @@ func (ttles *TTLExpirationScheduler) OnManifestExpire(f expiryFunc) {
 }
 
 // AddBlob schedules a blob cleanup after ttl expires
-func (ttles *TTLExpirationScheduler) AddBlob(blobRef reference.Canonical, ttl time.Duration) error {
+func (ttles *TTLExpirationScheduler) AddBlob(blobRef reference.Canonical) error {
 	ttles.Lock()
 	defer ttles.Unlock()
 
@@ -98,12 +131,12 @@ func (ttles *TTLExpirationScheduler) AddBlob(blobRef reference.Canonical, ttl ti
 		return fmt.Errorf("scheduler not started")
 	}
 
-	ttles.add(blobRef, ttl, entryTypeBlob)
+	ttles.add(blobRef, ttles.ttl, entryTypeBlob)
 	return nil
 }
 
 // AddManifest schedules a manifest cleanup after ttl expires
-func (ttles *TTLExpirationScheduler) AddManifest(manifestRef reference.Canonical, ttl time.Duration) error {
+func (ttles *TTLExpirationScheduler) AddManifest(manifestRef reference.Canonical) error {
 	ttles.Lock()
 	defer ttles.Unlock()
 
@@ -111,7 +144,7 @@ func (ttles *TTLExpirationScheduler) AddManifest(manifestRef reference.Canonical
 		return fmt.Errorf("scheduler not started")
 	}
 
-	ttles.add(manifestRef, ttl, entryTypeManifest)
+	ttles.add(manifestRef, ttles.ttl, entryTypeManifest)
 	return nil
 }
 

@@ -558,6 +558,58 @@ func (auth Auth) MarshalYAML() (interface{}, error) {
 	return map[string]Parameters(auth), nil
 }
 
+// TTL for Proxy mode
+type TTL struct {
+	duration *time.Duration
+}
+
+// Duration returns the TTL. If it's not set, it returns the default value (7 days).
+func (t *TTL) Duration() time.Duration {
+	if t.duration == nil {
+		return t.defaultDuration()
+	}
+	return *t.duration
+}
+
+// defaultDuration returns the default TTL value (7 days).
+func (t *TTL) defaultDuration() time.Duration {
+	return 7 * 24 * time.Hour
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface for parsing TTL from YAML.
+func (t *TTL) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	parseDuration := func(value interface{}) (time.Duration, error) {
+		switch v := value.(type) {
+		case int:
+			return time.Duration(v), nil
+		case int64:
+			return time.Duration(v), nil
+		case float32:
+			return time.Duration(v), nil
+		case float64:
+			return time.Duration(v), nil
+		case string:
+			return time.ParseDuration(v)
+		default:
+			return time.Duration(0), errors.New("invalid duration")
+		}
+	}
+
+	var raw interface{}
+	if err := unmarshal(&raw); err != nil {
+		return err
+	}
+
+	// Parse the duration from the value
+	parsedDuration, err := parseDuration(raw)
+	if err != nil {
+		return err
+	}
+
+	*t = TTL{duration: &parsedDuration}
+	return nil
+}
+
 // Notifications configures multiple http endpoints.
 type Notifications struct {
 	// EventConfig is the configuration for the event format that is sent to each Endpoint.
@@ -655,7 +707,7 @@ type Proxy struct {
 	// TTL is the expiry time of the content and will be cleaned up when it expires
 	// if not set, defaults to 7 * 24 hours
 	// If set to zero, will never expire cache
-	TTL *time.Duration `yaml:"ttl,omitempty"`
+	TTL TTL `yaml:"ttl,omitempty"`
 }
 
 // Parse parses an input configuration yaml document into a Configuration struct

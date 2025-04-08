@@ -180,9 +180,9 @@ func makeTestEnv(t *testing.T, localName, remoteName string) *testEnv {
 		blobs: localRepo.Blobs(ctx),
 	}
 
-	scheduler := proxy_scheduler.New(ctx, 24*7*time.Hour, localDriver, localRegistry, "/scheduler-state.json")
+	scheduler := proxy_scheduler.NewTTLExpirationScheduler(ctx, 24*7*time.Hour, localDriver, localRegistry)
 	te := &testEnv{
-		ctx:   ctx,
+		ctx: ctx,
 		store: NewProxyBlobStore(
 			ProxyBlobStoreParams{
 				LocalRepositoryName:  localNameRef,
