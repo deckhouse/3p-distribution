@@ -321,6 +321,8 @@ func (t *tags) Get(ctx context.Context, tag string) (distribution.Descriptor, er
 	defer resp.Body.Close()
 
 	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return distribution.Descriptor{}, distribution.ErrTagUnknown{Tag: tag}
 	case resp.StatusCode >= 200 && resp.StatusCode < 400 && len(resp.Header.Get("Docker-Content-Digest")) > 0:
 		// if the response is a success AND a Docker-Content-Digest can be retrieved from the headers
 		return descriptorFromResponse(resp)
@@ -480,6 +482,9 @@ func (ms *manifests) Get(ctx context.Context, dgst digest.Digest, options ...dis
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, distribution.ErrManifestUnknown{Name: ref.Name(), Tag: digestOrTag}
+	}
 	if resp.StatusCode == http.StatusNotModified {
 		return nil, distribution.ErrManifestNotModified
 	} else if SuccessStatus(resp.StatusCode) {
