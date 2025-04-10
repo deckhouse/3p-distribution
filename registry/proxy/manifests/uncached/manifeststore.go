@@ -23,20 +23,20 @@ type ProxyManifestStoreParams struct {
 	Ctx                  context.Context
 	RemoteManifests      distribution.ManifestService
 	RemoteRepositoryName reference.Named
-	AuthChallenger       proxy_auth.AuthChallenger
+	AuthChallenger       proxy_auth.AuthChallengeManager
 }
 
 type proxyManifestStore struct {
 	ctx                  context.Context
 	remoteManifests      distribution.ManifestService
 	remoteRepositoryName reference.Named
-	authChallenger       proxy_auth.AuthChallenger
+	authChallenger       proxy_auth.AuthChallengeManager
 }
 
 var _ distribution.ManifestService = &proxyManifestStore{}
 
 func (pms proxyManifestStore) Exists(ctx context.Context, dgst digest.Digest) (bool, error) {
-	if err := pms.authChallenger.TryEstablishChallenges(ctx); err != nil {
+	if err := pms.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
 		return false, err
 	}
 	return pms.remoteManifests.Exists(ctx, dgst)

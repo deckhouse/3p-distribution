@@ -28,16 +28,20 @@ import (
 
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
-	embedded       distribution.Namespace // provides local registry functionality
-	scheduler      *proxy_scheduler.TTLExpirationScheduler
-	remoteURL      url.URL
-	httpClient     *http.Client
-	httpTransport  *http.Transport
-	authChallenger proxy_auth.AuthChallenger
+	embedded  distribution.Namespace // provides local registry functionality
+	scheduler *proxy_scheduler.TTLExpirationScheduler
+
+	remoteURL     url.URL
+	httpTransport *http.Transport
+
+	challengeManager challenge.Manager
+	basicAuthCred    auth.CredentialStore
+	tokenAuthCred    auth.CredentialStore
+	authChallenger   proxy_auth.AuthChallengeManager
+
 	remotePathOnly string
 	localPathAlias string
-
-	cacheEnable bool
+	cacheEnable    bool
 }
 
 // NewProxyRegistry creates a proxy registry
@@ -130,6 +134,7 @@ func NewProxyRegistry(
 		ttlExpSchedulerRun = true
 	}
 
+	// Http transport
 	var tlsConfig *tls.Config
 	if config.CA != nil {
 		var CARaw []byte
@@ -149,35 +154,36 @@ func NewProxyRegistry(
 			RootCAs: certPool,
 		}
 	}
-
 	httpTransport := http.DefaultTransport.(*http.Transport).Clone()
 	httpTransport.TLSClientConfig = tlsConfig
-	httpClient := &http.Client{
-		Transport: httpTransport,
-	}
 
-	cs, err := proxy_auth.ConfigureAuth(config.Username, config.Password, config.RemoteURL, httpClient)
-	if err != nil {
-		err = fmt.Errorf("failed to configure proxy authentication: %w", err)
-		return
-	}
+	// Auth
+	challengeManager := challenge.NewSimpleManager()
+	basicAuthCred := proxy_auth.NewBasicAuthCredentials(config.Username, config.Password, remoteURL.String())
+	tokenAuthCred := proxy_auth.NewTokenAuthCredentials(config.Username, config.Password, remoteURL.String())
+	authChallenger := proxy_auth.NewAuthChallengeManager(
+		proxy_auth.AuthChallengeManagerParams{
+			RemoteURL: *remoteURL,
+			HttpClient: &http.Client{
+				Transport: httpTransport,
+			},
+			CredentialStores: []proxy_auth.CredentialStore{tokenAuthCred, basicAuthCred},
+			ChallengeManager: challengeManager,
+		},
+	)
 
 	proxyRegistry = &proxyingRegistry{
-		embedded:       registry,
-		scheduler:      scheduler,
-		remoteURL:      *remoteURL,
-		httpClient:     httpClient,
-		httpTransport:  httpTransport,
-		remotePathOnly: remotePathOnly,
-		localPathAlias: localPathAlias,
-		cacheEnable:    cacheEnable,
-		authChallenger: proxy_auth.NewRemoteAuthChallenger(
-			proxy_auth.RemoteAuthChallengerParams{
-				RemoteURL:  *remoteURL,
-				HttpClient: httpClient,
-				CM:         challenge.NewSimpleManager(),
-				CS:         cs,
-			}),
+		embedded:         registry,
+		scheduler:        scheduler,
+		remoteURL:        *remoteURL,
+		httpTransport:    httpTransport,
+		remotePathOnly:   remotePathOnly,
+		localPathAlias:   localPathAlias,
+		cacheEnable:      cacheEnable,
+		challengeManager: challengeManager,
+		basicAuthCred:    basicAuthCred,
+		tokenAuthCred:    tokenAuthCred,
+		authChallenger:   authChallenger,
 	}
 	return
 }
@@ -201,26 +207,33 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 		return nil, err
 	}
 
-	c := pr.authChallenger
-
-	tkopts := auth.TokenHandlerOptions{
-		Transport:   pr.httpTransport,
-		Credentials: c.CredentialStore(),
-		Scopes: []auth.Scope{
-			auth.RepositoryScope{
-				Repository: remoteRepositoryName.Name(),
-				Actions:    []string{"pull"},
-			},
-		},
-		Logger: dcontext.GetLogger(ctx),
-	}
-
 	tr := transport.NewTransport(pr.httpTransport,
 		auth.NewAuthorizer(
-			c.ChallengeManager(),
-			auth.NewTokenHandlerWithOptions(tkopts),
+			// Common challenger manager
+			pr.challengeManager,
+
+			// Token Handler
+			auth.NewTokenHandlerWithOptions(
+				auth.TokenHandlerOptions{
+					Transport:   pr.httpTransport,
+					Credentials: pr.tokenAuthCred,
+					Scopes: []auth.Scope{
+						auth.RepositoryScope{
+							Repository: remoteRepositoryName.Name(),
+							Actions:    []string{"pull"},
+						},
+					},
+					Logger: dcontext.GetLogger(ctx),
+				}),
+
+			// Basic Handler
+			auth.NewBasicHandler(pr.basicAuthCred),
 		),
 	)
+
+	if err := pr.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
+		return nil, err
+	}
 
 	remoteRepo, err := client.NewRepository(remoteRepositoryName, pr.remoteURL.String(), tr)
 	if err != nil {

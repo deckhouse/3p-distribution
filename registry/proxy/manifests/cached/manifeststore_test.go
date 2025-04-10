@@ -11,8 +11,6 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest"
 	"github.com/docker/distribution/manifest/schema1"
-	"github.com/docker/distribution/registry/client/auth"
-	"github.com/docker/distribution/registry/client/auth/challenge"
 	proxy_scheduler "github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/cache/memory"
@@ -68,18 +66,10 @@ type mockChallenger struct {
 }
 
 // Called for remote operations only
-func (m *mockChallenger) TryEstablishChallenges(context.Context) error {
+func (m *mockChallenger) FetchAndUpdateChallenges(context.Context) error {
 	m.Lock()
 	defer m.Unlock()
 	m.count++
-	return nil
-}
-
-func (m *mockChallenger) CredentialStore() auth.CredentialStore {
-	return nil
-}
-
-func (m *mockChallenger) ChallengeManager() challenge.Manager {
 	return nil
 }
 

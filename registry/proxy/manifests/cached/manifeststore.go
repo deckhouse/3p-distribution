@@ -31,7 +31,7 @@ type ProxyManifestStoreParams struct {
 	LocalRepositoryName  reference.Named
 	RemoteRepositoryName reference.Named
 	Scheduler            *proxy_scheduler.TTLExpirationScheduler
-	AuthChallenger       proxy_auth.AuthChallenger
+	AuthChallenger       proxy_auth.AuthChallengeManager
 }
 
 type proxyManifestStore struct {
@@ -41,7 +41,7 @@ type proxyManifestStore struct {
 	localRepositoryName  reference.Named
 	remoteRepositoryName reference.Named
 	scheduler            *proxy_scheduler.TTLExpirationScheduler
-	authChallenger       proxy_auth.AuthChallenger
+	authChallenger       proxy_auth.AuthChallengeManager
 }
 
 var _ distribution.ManifestService = &proxyManifestStore{}
@@ -54,7 +54,7 @@ func (pms proxyManifestStore) Exists(ctx context.Context, dgst digest.Digest) (b
 	if exists {
 		return true, nil
 	}
-	if err := pms.authChallenger.TryEstablishChallenges(ctx); err != nil {
+	if err := pms.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
 		return false, err
 	}
 	return pms.remoteManifests.Exists(ctx, dgst)
@@ -66,7 +66,7 @@ func (pms proxyManifestStore) Get(ctx context.Context, dgst digest.Digest, optio
 	var fromRemote bool
 	manifest, err := pms.localManifests.Get(ctx, dgst, options...)
 	if err != nil {
-		if err := pms.authChallenger.TryEstablishChallenges(ctx); err != nil {
+		if err := pms.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
 			return nil, err
 		}
 

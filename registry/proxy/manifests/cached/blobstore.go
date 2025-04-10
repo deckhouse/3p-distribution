@@ -33,7 +33,7 @@ type ProxyBlobStoreParams struct {
 	Scheduler            *proxy_scheduler.TTLExpirationScheduler
 	LocalRepositoryName  reference.Named
 	RemoteRepositoryName reference.Named
-	AuthChallenger       proxy_auth.AuthChallenger
+	AuthChallenger       proxy_auth.AuthChallengeManager
 }
 
 type proxyBlobStore struct {
@@ -42,7 +42,7 @@ type proxyBlobStore struct {
 	scheduler            *proxy_scheduler.TTLExpirationScheduler
 	localRepositoryName  reference.Named
 	remoteRepositoryName reference.Named
-	authChallenger       proxy_auth.AuthChallenger
+	authChallenger       proxy_auth.AuthChallengeManager
 }
 
 var _ distribution.BlobStore = &proxyBlobStore{}
@@ -144,7 +144,7 @@ func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter,
 		return nil
 	}
 
-	if err := pbs.authChallenger.TryEstablishChallenges(ctx); err != nil {
+	if err := pbs.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
 		return err
 	}
 
@@ -193,7 +193,7 @@ func (pbs *proxyBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distri
 		return distribution.Descriptor{}, err
 	}
 
-	if err := pbs.authChallenger.TryEstablishChallenges(ctx); err != nil {
+	if err := pbs.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
 		return distribution.Descriptor{}, err
 	}
 
@@ -206,7 +206,7 @@ func (pbs *proxyBlobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte,
 		return blob, nil
 	}
 
-	if err := pbs.authChallenger.TryEstablishChallenges(ctx); err != nil {
+	if err := pbs.authChallenger.FetchAndUpdateChallenges(ctx); err != nil {
 		return []byte{}, err
 	}
 

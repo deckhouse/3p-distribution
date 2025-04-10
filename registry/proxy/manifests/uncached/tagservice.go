@@ -17,12 +17,12 @@ func NewProxyTagService(params ProxyTagServiceParams) *proxyTagService {
 
 type ProxyTagServiceParams struct {
 	RemoteTags     distribution.TagService
-	AuthChallenger proxy_auth.AuthChallenger
+	AuthChallenger proxy_auth.AuthChallengeManager
 }
 
 type proxyTagService struct {
 	remoteTags     distribution.TagService
-	authChallenger proxy_auth.AuthChallenger
+	authChallenger proxy_auth.AuthChallengeManager
 }
 
 var _ distribution.TagService = proxyTagService{}
@@ -31,7 +31,7 @@ var _ distribution.TagService = proxyTagService{}
 // tag service first and then caching it locally.  If the remote is unavailable
 // the local association is returned
 func (pt proxyTagService) Get(ctx context.Context, tag string) (distribution.Descriptor, error) {
-	err := pt.authChallenger.TryEstablishChallenges(ctx)
+	err := pt.authChallenger.FetchAndUpdateChallenges(ctx)
 	if err != nil {
 		return distribution.Descriptor{}, err
 	}
@@ -52,7 +52,7 @@ func (pt proxyTagService) Untag(ctx context.Context, tag string) error {
 }
 
 func (pt proxyTagService) All(ctx context.Context) ([]string, error) {
-	err := pt.authChallenger.TryEstablishChallenges(ctx)
+	err := pt.authChallenger.FetchAndUpdateChallenges(ctx)
 	if err != nil {
 		return []string{}, err
 	}
