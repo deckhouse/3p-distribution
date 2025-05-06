@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"sync"
 
+	"golang.org/x/sync/singleflight"
+
 	dcontext "github.com/docker/distribution/context"
 	"github.com/docker/distribution/registry/client/auth/challenge"
 )
@@ -49,29 +51,44 @@ type AuthChallengeManagerImpl struct {
 	challengeManager challenge.Manager
 	credentialStores []CredentialStore
 
-	// Flag to indicate if the function FetchAndUpdateChallenges is already running
-	mutex      sync.Mutex
-	isUpdating bool
+	group singleflight.Group
 }
 
-// FetchAndUpdateChallenges retrieves authentication challenges from the upstream registry and updates the credentials.
+// FetchAndUpdateChallenges ensures that only one concurrent fetch/update operation is executed.
+// If multiple goroutines call this method simultaneously, the underlying logic will only be
+// executed once (via singleflight), and all callers will receive the same result.
+//
+// Each caller still respects its own context. If a specific caller's context is canceled,
+// it will return early with context.Canceled, but the shared operation will continue
+// unaffected for the rest of the callers.
 func (r *AuthChallengeManagerImpl) FetchAndUpdateChallenges(ctx context.Context) error {
-	// Prevent concurrent execution of the function
-	r.mutex.Lock()
-	if r.isUpdating {
-		r.mutex.Unlock()
-		return nil // If already updating, do nothing
+	// Use DoChan to initiate or wait for the shared operation.
+	// We pass context.Background() to prevent cancellation of the shared execution
+	// in case the first caller's context is canceled.
+	result := r.group.DoChan("fetchAndUpdateChallengesInternal", func() (interface{}, error) {
+		return nil, r.fetchAndUpdateChallengesInternal(context.Background())
+	})
+
+	select {
+	case <-ctx.Done():
+		// This specific caller's context was canceled before the operation completed.
+		// Return the cancellation error for this call only.
+		return ctx.Err()
+
+	case res := <-result:
+		// The shared operation completed. Return its result (or error) to the caller.
+		return res.Err
 	}
-	r.isUpdating = true
-	r.mutex.Unlock()
+}
 
-	// Defer unlocking to ensure flag is reset even if an error occurs
-	defer func() {
-		r.mutex.Lock()
-		r.isUpdating = false
-		r.mutex.Unlock()
-	}()
-
+// fetchAndUpdateChallengesInternal performs the actual logic of fetching authentication challenges
+// from the remote registry and updating all credential stores accordingly.
+//
+// Steps:
+// 1. Sends a ping request to the upstream registry to obtain authentication challenges.
+// 2. Parses and stores the received challenges.
+// 3. Iterates through all credential stores and updates them with the new challenge data.
+func (r *AuthChallengeManagerImpl) fetchAndUpdateChallengesInternal(ctx context.Context) error {
 	remoteURL := r.remoteURL
 	remoteURL.Path = "/v2/"
 	remoteURLStr := remoteURL.String()
