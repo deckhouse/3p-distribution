@@ -8,15 +8,12 @@ require (
 	github.com/aws/aws-sdk-go v1.14.30
 	github.com/bshuster-repo/logrus-logstash-hook v0.0.0-20170517171303-d2c0ecc1836d
 	github.com/bugsnag/bugsnag-go v1.0.3-0.20141110184014-b1d153021fcd
-	github.com/denverdino/aliyungo v0.0.0-20161108032828-afedced274aa
 	github.com/distribution/reference v0.5.0
 	github.com/docker/go-metrics v0.0.0-20180209012529-399ea8c73916
 	github.com/docker/libtrust v0.0.0-20150114040149-fa567046d9b1
 	github.com/garyburd/redigo v0.0.0-20150301180006-535138d7bcd7
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
-	github.com/mitchellh/mapstructure v1.5.0
-	github.com/ncw/swift v1.0.40
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/sirupsen/logrus v1.0.1-0.20170620144510-3d4380f53a34
