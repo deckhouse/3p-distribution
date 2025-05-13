@@ -77,6 +77,9 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 
 		v := storage.NewVacuum(ctx, driver)
 		s.OnBlobExpire(func(ref reference.Reference) error {
+			logger := dcontext.GetLogger(ctx)
+			logger.Infof("Clearing expired blob \"%v\"\n", ref)
+
 			var r reference.Canonical
 			var ok bool
 			if r, ok = ref.(reference.Canonical); !ok {
@@ -105,6 +108,9 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		})
 
 		s.OnManifestExpire(func(ref reference.Reference) error {
+			logger := dcontext.GetLogger(ctx)
+			logger.Infof("Clearing expired manifest \"%v\"\n", ref)
+
 			var r reference.Canonical
 			var ok bool
 			if r, ok = ref.(reference.Canonical); !ok {
