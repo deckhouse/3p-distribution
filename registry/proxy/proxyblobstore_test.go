@@ -96,7 +96,7 @@ func (sbs statsBlobStore) Delete(ctx context.Context, dgst digest.Digest) error 
 type testEnv struct {
 	numUnique int
 	inRemote  []distribution.Descriptor
-	store     proxyBlobStore
+	store     cachedBlobStore
 	ctx       context.Context
 }
 
@@ -182,13 +182,16 @@ func makeTestEnv(t *testing.T, localName, remoteName string) *testEnv {
 
 	s := scheduler.New(ctx, 24*7*time.Hour, localDriver, localRegistry, "/scheduler-state.json")
 
-	proxyBlobStore := proxyBlobStore{
-		localRepositoryName:  localNameRef,
-		remoteRepositoryName: remoteNameRef,
-		remoteStore:          truthBlobs,
-		localStore:           localBlobs,
-		scheduler:            s,
-		authChallenger:       &mockChallenger{},
+	proxyBlobStore := cachedBlobStore{
+		blobStore: blobStore{
+			remoteRepositoryName: remoteNameRef,
+			remoteStore:          truthBlobs,
+			authChallenger:       &mockChallenger{},
+		},
+
+		localRepositoryName: localNameRef,
+		localStore:          localBlobs,
+		scheduler:           s,
 	}
 
 	te := &testEnv{

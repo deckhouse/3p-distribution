@@ -90,7 +90,7 @@ func (ttles *TTLExpirationScheduler) OnManifestExpire(f expiryFunc) {
 }
 
 // AddBlob schedules a blob cleanup after ttl expires
-func (ttles *TTLExpirationScheduler) AddBlob(blobRef reference.Canonical, ttl time.Duration) error {
+func (ttles *TTLExpirationScheduler) AddBlob(blobRef reference.Canonical) error {
 	ttles.Lock()
 	defer ttles.Unlock()
 
@@ -98,12 +98,12 @@ func (ttles *TTLExpirationScheduler) AddBlob(blobRef reference.Canonical, ttl ti
 		return fmt.Errorf("scheduler not started")
 	}
 
-	ttles.add(blobRef, ttl, entryTypeBlob)
+	ttles.add(blobRef, entryTypeBlob)
 	return nil
 }
 
 // AddManifest schedules a manifest cleanup after ttl expires
-func (ttles *TTLExpirationScheduler) AddManifest(manifestRef reference.Canonical, ttl time.Duration) error {
+func (ttles *TTLExpirationScheduler) AddManifest(manifestRef reference.Canonical) error {
 	ttles.Lock()
 	defer ttles.Unlock()
 
@@ -111,7 +111,7 @@ func (ttles *TTLExpirationScheduler) AddManifest(manifestRef reference.Canonical
 		return fmt.Errorf("scheduler not started")
 	}
 
-	ttles.add(manifestRef, ttl, entryTypeManifest)
+	ttles.add(manifestRef, entryTypeManifest)
 	return nil
 }
 
@@ -190,10 +190,10 @@ func (ttles *TTLExpirationScheduler) Start() error {
 	return nil
 }
 
-func (ttles *TTLExpirationScheduler) add(r reference.Reference, ttl time.Duration, eType int) {
+func (ttles *TTLExpirationScheduler) add(r reference.Reference, eType int) {
 	entry := &schedulerEntry{
 		Key:       r.String(),
-		Expiry:    time.Now().Add(ttl),
+		Expiry:    time.Now().Add(ttles.ttl),
 		EntryType: eType,
 	}
 	dcontext.GetLogger(ttles.ctx).Infof("Adding new scheduler entry for %s with ttl=%s", entry.Key, time.Until(entry.Expiry))
@@ -201,7 +201,7 @@ func (ttles *TTLExpirationScheduler) add(r reference.Reference, ttl time.Duratio
 		oldEntry.timer.Stop()
 	}
 	ttles.entries[entry.Key] = entry
-	entry.timer = ttles.startTimer(entry, ttl)
+	entry.timer = ttles.startTimer(entry, ttles.ttl)
 	ttles.indexDirty = true
 }
 
@@ -397,12 +397,12 @@ func (ttles *TTLExpirationScheduler) fillStateFromStorage() error {
 	defer ttles.Unlock()
 	// Schedule TTL for all tracked manifests
 	for manifestRef := range manifestRefSet {
-		ttles.add(manifestRef, ttles.ttl, entryTypeManifest)
+		ttles.add(manifestRef, entryTypeManifest)
 	}
 
 	// Schedule TTL for all tracked blobs
 	for blobRef := range blobRefSet {
-		ttles.add(blobRef, ttles.ttl, entryTypeBlob)
+		ttles.add(blobRef, entryTypeBlob)
 	}
 	return nil
 }

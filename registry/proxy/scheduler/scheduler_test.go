@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -11,18 +12,14 @@ import (
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	distribution_context "github.com/docker/distribution/context"
+	"github.com/docker/distribution/manifest"
+	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/cache/memory"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
-	"github.com/docker/libtrust"
-
-	// "github.com/docker/distribution/registry/storage/driver/filesystem"
-	"io"
-
-	"github.com/docker/distribution/manifest"
-	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/registry/storage/driver/inmemory"
 	"github.com/docker/distribution/testutil"
+	"github.com/docker/libtrust"
 )
 
 type schedulerEntryTest struct {
@@ -157,10 +154,10 @@ func testRefs(t *testing.T) (reference.Reference, reference.Reference, reference
 
 func TestSchedule(t *testing.T) {
 	driver, registry := newRegistry(t)
-	ttl := 24 * 7 * time.Hour
+	timeUnit := time.Millisecond
+	ttl := 10 * timeUnit
 
 	ref1, ref2, ref3 := testRefs(t)
-	timeUnit := time.Millisecond
 	remainingRepos := map[string]bool{
 		ref1.String(): true,
 		ref2.String(): true,
@@ -190,12 +187,12 @@ func TestSchedule(t *testing.T) {
 		t.Fatalf("Error starting ttlExpirationScheduler: %s", err)
 	}
 
-	s.add(ref1, 3*timeUnit, entryTypeBlob)
-	s.add(ref2, 1*timeUnit, entryTypeBlob)
+	s.add(ref1, entryTypeBlob)
+	s.add(ref2, entryTypeBlob)
 
 	func() {
 		s.Lock()
-		s.add(ref3, 1*timeUnit, entryTypeBlob)
+		s.add(ref3, entryTypeBlob)
 		s.Unlock()
 
 	}()
@@ -391,9 +388,9 @@ func TestStoreState(t *testing.T) {
 	}
 
 	// Add img3 (Expiry after repositoryTTL time)
-	s.AddManifest(manifestRef3, ttl)
+	s.AddManifest(manifestRef3)
 	for _, blob := range blobsRef3 {
-		s.AddBlob(blob, ttl)
+		s.AddBlob(blob)
 	}
 
 	// Wait Expiry img1 and img2, and save state file in storage
@@ -427,11 +424,10 @@ func TestStoreState(t *testing.T) {
 
 func TestStopRestore(t *testing.T) {
 	driver, registry := newRegistry(t)
-	ttl := 24 * 7 * time.Hour
+	timeUnit := time.Millisecond
+	ttl := 100 * timeUnit
 
 	ref1, ref2, _ := testRefs(t)
-
-	timeUnit := time.Millisecond
 	remainingRepos := map[string]bool{
 		ref1.String(): true,
 		ref2.String(): true,
@@ -451,10 +447,10 @@ func TestStopRestore(t *testing.T) {
 
 	err := s.Start()
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
-	s.add(ref1, 300*timeUnit, entryTypeBlob)
-	s.add(ref2, 100*timeUnit, entryTypeBlob)
+	s.add(ref1, entryTypeBlob)
+	s.add(ref2, entryTypeBlob)
 
 	// Start and stop before all operations complete
 	// state will be written to fs
@@ -792,9 +788,9 @@ func TestFillStateFromStorageStoreAndUpdateState(t *testing.T) {
 	}
 
 	// Add data to the scheduler with new img4
-	s3.AddManifest(manifestRef, ttl)
+	s3.AddManifest(manifestRef)
 	for _, blob := range blobsRef {
-		s3.AddBlob(blob, ttl)
+		s3.AddBlob(blob)
 	}
 
 	<-time.After(100 * timeUnit)

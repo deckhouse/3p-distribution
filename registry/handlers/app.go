@@ -319,7 +319,7 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	}
 
 	// configure as a pull through cache
-	if config.Proxy.RemoteURL == "" || (config.Proxy.TTL != nil && *config.Proxy.TTL <= 0) {
+	if config.Proxy.RemoteURL == "" || (config.Proxy.TTL != nil && *config.Proxy.TTL <= 0) || config.Proxy.NoCache {
 		// Remove "/scheduler-state.json"
 		pathToStateFile := "/scheduler-state.json"
 		if _, err := app.driver.Stat(ctx, pathToStateFile); err != nil {

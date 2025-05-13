@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -15,39 +14,30 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-type proxyBlobStore struct {
-	localStore           distribution.BlobStore
+type blobStore struct {
 	remoteStore          distribution.BlobService
-	scheduler            *scheduler.TTLExpirationScheduler
-	ttl                  *time.Duration
-	localRepositoryName  reference.Named
 	remoteRepositoryName reference.Named
 	authChallenger       authChallenger
 }
 
-var _ distribution.BlobStore = &proxyBlobStore{}
+var _ distribution.BlobStore = &blobStore{}
 
-// inflight tracks currently downloading blobs
-var inflight = make(map[digest.Digest]struct{})
+func (pbs blobStore) copyContent(ctx context.Context, dgst digest.Digest, writer io.Writer) (distribution.Descriptor, error) {
+	err := pbs.authChallenger.tryEstablishChallenges(ctx)
+	if err != nil {
+		return distribution.Descriptor{}, err
+	}
 
-// mu protects inflight
-var mu sync.Mutex
-
-func setResponseHeaders(w http.ResponseWriter, length int64, mediaType string, digest digest.Digest) {
-	w.Header().Set("Content-Length", strconv.FormatInt(length, 10))
-	w.Header().Set("Content-Type", mediaType)
-	w.Header().Set("Docker-Content-Digest", digest.String())
-	w.Header().Set("Etag", digest.String())
-}
-
-func (pbs *proxyBlobStore) copyContent(ctx context.Context, dgst digest.Digest, writer io.Writer) (distribution.Descriptor, error) {
 	desc, err := pbs.remoteStore.Stat(ctx, dgst)
 	if err != nil {
 		return distribution.Descriptor{}, err
 	}
 
 	if w, ok := writer.(http.ResponseWriter); ok {
-		setResponseHeaders(w, desc.Size, desc.MediaType, dgst)
+		w.Header().Set("Content-Length", strconv.FormatInt(desc.Size, 10))
+		w.Header().Set("Content-Type", desc.MediaType)
+		w.Header().Set("Docker-Content-Digest", dgst.String())
+		w.Header().Set("Etag", dgst.String())
 	}
 
 	remoteReader, err := pbs.remoteStore.Open(ctx, dgst)
@@ -67,7 +57,69 @@ func (pbs *proxyBlobStore) copyContent(ctx context.Context, dgst digest.Digest, 
 	return desc, nil
 }
 
-func (pbs *proxyBlobStore) serveLocal(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) (bool, error) {
+func (pbs blobStore) ServeBlob(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) error {
+	_, err := pbs.copyContent(ctx, dgst, w)
+	return err
+}
+
+func (pbs blobStore) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
+	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
+		return distribution.Descriptor{}, err
+	}
+
+	return pbs.remoteStore.Stat(ctx, dgst)
+}
+
+func (pbs blobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte, error) {
+	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
+		return []byte{}, err
+	}
+
+	return pbs.remoteStore.Get(ctx, dgst)
+}
+
+// Unsupported functions
+func (pbs blobStore) Put(ctx context.Context, mediaType string, p []byte) (distribution.Descriptor, error) {
+	return distribution.Descriptor{}, distribution.ErrUnsupported
+}
+
+func (pbs blobStore) Create(ctx context.Context, options ...distribution.BlobCreateOption) (distribution.BlobWriter, error) {
+	return nil, distribution.ErrUnsupported
+}
+
+func (pbs blobStore) Resume(ctx context.Context, id string) (distribution.BlobWriter, error) {
+	return nil, distribution.ErrUnsupported
+}
+
+func (pbs blobStore) Mount(ctx context.Context, sourceRepo reference.Named, dgst digest.Digest) (distribution.Descriptor, error) {
+	return distribution.Descriptor{}, distribution.ErrUnsupported
+}
+
+func (pbs blobStore) Open(ctx context.Context, dgst digest.Digest) (io.ReadSeekCloser, error) {
+	return nil, distribution.ErrUnsupported
+}
+
+func (pbs blobStore) Delete(ctx context.Context, dgst digest.Digest) error {
+	return distribution.ErrUnsupported
+}
+
+type cachedBlobStore struct {
+	blobStore
+
+	localStore          distribution.BlobStore
+	scheduler           *scheduler.TTLExpirationScheduler
+	localRepositoryName reference.Named
+}
+
+var _ distribution.BlobStore = &cachedBlobStore{}
+
+// blobsInflight tracks currently downloading blobs
+var blobsInflight = make(map[digest.Digest]struct{})
+
+// blobsMutex protects inflight
+var blobsMutex sync.Mutex
+
+func (pbs cachedBlobStore) serveLocal(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) (bool, error) {
 	localDesc, err := pbs.localStore.Stat(ctx, dgst)
 	if err != nil {
 		// Stat can report a zero sized file here if it's checked between creation
@@ -75,30 +127,28 @@ func (pbs *proxyBlobStore) serveLocal(ctx context.Context, w http.ResponseWriter
 		return false, nil
 	}
 
-	if err == nil {
-		proxyMetrics.BlobPush(uint64(localDesc.Size))
-		return true, pbs.localStore.ServeBlob(ctx, w, r, dgst)
-	}
-
-	return false, nil
-
+	proxyMetrics.BlobPush(uint64(localDesc.Size))
+	return true, pbs.localStore.ServeBlob(ctx, w, r, dgst)
 }
 
-func (pbs *proxyBlobStore) storeLocal(ctx context.Context, dgst digest.Digest) error {
+func (pbs cachedBlobStore) storeLocal(ctx context.Context, dgst digest.Digest) error {
 	defer func() {
-		mu.Lock()
-		delete(inflight, dgst)
-		mu.Unlock()
+		blobsMutex.Lock()
+		delete(blobsInflight, dgst)
+		blobsMutex.Unlock()
 	}()
 
-	var desc distribution.Descriptor
-	var err error
-	var bw distribution.BlobWriter
+	var (
+		desc distribution.Descriptor
+		err  error
+		bw   distribution.BlobWriter
+	)
 
 	bw, err = pbs.localStore.Create(ctx)
 	if err != nil {
 		return err
 	}
+	defer bw.Cancel(ctx)
 
 	desc, err = pbs.copyContent(ctx, dgst, bw)
 	if err != nil {
@@ -113,7 +163,7 @@ func (pbs *proxyBlobStore) storeLocal(ctx context.Context, dgst digest.Digest) e
 	return nil
 }
 
-func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) error {
+func (pbs cachedBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter, r *http.Request, dgst digest.Digest) error {
 	served, err := pbs.serveLocal(ctx, w, r, dgst)
 	if err != nil {
 		dcontext.GetLogger(ctx).Errorf("Error serving blob from local storage: %s", err.Error())
@@ -124,46 +174,37 @@ func (pbs *proxyBlobStore) ServeBlob(ctx context.Context, w http.ResponseWriter,
 		return nil
 	}
 
-	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
-		return err
+	blobsMutex.Lock()
+	_, ok := blobsInflight[dgst]
+	if !ok {
+		blobsInflight[dgst] = struct{}{}
 	}
+	blobsMutex.Unlock()
 
-	mu.Lock()
-	_, ok := inflight[dgst]
-	if ok {
-		mu.Unlock()
-		_, err := pbs.copyContent(ctx, dgst, w)
-		return err
-	}
-	inflight[dgst] = struct{}{}
-	mu.Unlock()
-
-	go func(dgst digest.Digest) {
-		if err := pbs.storeLocal(ctx, dgst); err != nil {
-			dcontext.GetLogger(ctx).Errorf("Error committing to storage: %s", err.Error())
-		}
-
-		blobRef, err := reference.WithDigest(pbs.localRepositoryName, dgst)
-		if err != nil {
-			dcontext.GetLogger(ctx).Errorf("Error creating reference: %s", err)
-			return
-		}
-
-		if pbs.scheduler != nil && pbs.ttl != nil {
-			if err := pbs.scheduler.AddBlob(blobRef, *pbs.ttl); err != nil {
-				dcontext.GetLogger(ctx).Errorf("Error adding blob: %s", err)
+	if !ok {
+		go func(dgst digest.Digest) {
+			if err := pbs.storeLocal(ctx, dgst); err != nil {
+				dcontext.GetLogger(ctx).Errorf("Error committing to storage: %s", err.Error())
 			}
-		}
-	}(dgst)
 
-	_, err = pbs.copyContent(ctx, dgst, w)
-	if err != nil {
-		return err
+			blobRef, err := reference.WithDigest(pbs.localRepositoryName, dgst)
+			if err != nil {
+				dcontext.GetLogger(ctx).Errorf("Error creating reference: %s", err)
+				return
+			}
+
+			if pbs.scheduler != nil {
+				if err := pbs.scheduler.AddBlob(blobRef); err != nil {
+					dcontext.GetLogger(ctx).Errorf("Error adding blob: %s", err)
+				}
+			}
+		}(dgst)
 	}
-	return nil
+
+	return pbs.blobStore.ServeBlob(ctx, w, r, dgst)
 }
 
-func (pbs *proxyBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
+func (pbs cachedBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
 	desc, err := pbs.localStore.Stat(ctx, dgst)
 	if err == nil {
 		return desc, err
@@ -173,24 +214,16 @@ func (pbs *proxyBlobStore) Stat(ctx context.Context, dgst digest.Digest) (distri
 		return distribution.Descriptor{}, err
 	}
 
-	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
-		return distribution.Descriptor{}, err
-	}
-
-	return pbs.remoteStore.Stat(ctx, dgst)
+	return pbs.blobStore.Stat(ctx, dgst)
 }
 
-func (pbs *proxyBlobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte, error) {
+func (pbs cachedBlobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte, error) {
 	blob, err := pbs.localStore.Get(ctx, dgst)
 	if err == nil {
 		return blob, nil
 	}
 
-	if err := pbs.authChallenger.tryEstablishChallenges(ctx); err != nil {
-		return []byte{}, err
-	}
-
-	blob, err = pbs.remoteStore.Get(ctx, dgst)
+	blob, err = pbs.blobStore.Get(ctx, dgst)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -200,29 +233,4 @@ func (pbs *proxyBlobStore) Get(ctx context.Context, dgst digest.Digest) ([]byte,
 		return []byte{}, err
 	}
 	return blob, nil
-}
-
-// Unsupported functions
-func (pbs *proxyBlobStore) Put(ctx context.Context, mediaType string, p []byte) (distribution.Descriptor, error) {
-	return distribution.Descriptor{}, distribution.ErrUnsupported
-}
-
-func (pbs *proxyBlobStore) Create(ctx context.Context, options ...distribution.BlobCreateOption) (distribution.BlobWriter, error) {
-	return nil, distribution.ErrUnsupported
-}
-
-func (pbs *proxyBlobStore) Resume(ctx context.Context, id string) (distribution.BlobWriter, error) {
-	return nil, distribution.ErrUnsupported
-}
-
-func (pbs *proxyBlobStore) Mount(ctx context.Context, sourceRepo reference.Named, dgst digest.Digest) (distribution.Descriptor, error) {
-	return distribution.Descriptor{}, distribution.ErrUnsupported
-}
-
-func (pbs *proxyBlobStore) Open(ctx context.Context, dgst digest.Digest) (io.ReadSeekCloser, error) {
-	return nil, distribution.ErrUnsupported
-}
-
-func (pbs *proxyBlobStore) Delete(ctx context.Context, dgst digest.Digest) error {
-	return distribution.ErrUnsupported
 }

@@ -29,7 +29,7 @@ type statsManifest struct {
 
 type manifestStoreTestEnv struct {
 	manifestDigest digest.Digest // digest of the signed manifest in the local storage
-	manifests      proxyManifestStore
+	manifests      cachedManifestStore
 }
 
 func (te manifestStoreTestEnv) LocalStats() *map[string]int {
@@ -144,14 +144,16 @@ func newManifestStoreTestEnv(t *testing.T, localName, remoteName, tag string) *m
 	s := scheduler.New(ctx, 24*7*time.Hour, inmemory.New(), localRegistry, "/scheduler-state.json")
 	return &manifestStoreTestEnv{
 		manifestDigest: manifestDigest,
-		manifests: proxyManifestStore{
-			ctx:                  ctx,
-			localManifests:       localManifests,
-			remoteManifests:      truthManifests,
-			scheduler:            s,
-			localRepositoryName:  localNameRef,
-			remoteRepositoryName: remoteNameRef,
-			authChallenger:       &mockChallenger{},
+		manifests: cachedManifestStore{
+			manifestStore: manifestStore{
+				remoteManifests:      truthManifests,
+				remoteRepositoryName: remoteNameRef,
+				authChallenger:       &mockChallenger{},
+			},
+
+			localManifests:      localManifests,
+			scheduler:           s,
+			localRepositoryName: localNameRef,
 		},
 	}
 }

@@ -656,6 +656,9 @@ type Proxy struct {
 	// if not set, defaults to 7 * 24 hours
 	// If set to zero, will never expire cache
 	TTL *time.Duration `yaml:"ttl,omitempty"`
+
+	// NoCache explicitly disables the cache for this proxy.
+	NoCache bool `yaml:"nocache,omitempty"`
 }
 
 // Parse parses an input configuration yaml document into a Configuration struct

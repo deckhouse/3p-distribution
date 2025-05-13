@@ -57,17 +57,19 @@ func (m *mockTagStore) All(ctx context.Context) ([]string, error) {
 	return tags, nil
 }
 
-func testProxyTagService(local, remote map[string]distribution.Descriptor) *proxyTagService {
+func testProxyTagService(local, remote map[string]distribution.Descriptor) *cachedTagService {
 	if local == nil {
 		local = make(map[string]distribution.Descriptor)
 	}
 	if remote == nil {
 		remote = make(map[string]distribution.Descriptor)
 	}
-	return &proxyTagService{
-		localTags:      &mockTagStore{mapping: local},
-		remoteTags:     &mockTagStore{mapping: remote},
-		authChallenger: &mockChallenger{},
+	return &cachedTagService{
+		tagService: tagService{
+			remoteTags:     &mockTagStore{mapping: remote},
+			authChallenger: &mockChallenger{},
+		},
+		localTags: &mockTagStore{mapping: local},
 	}
 }
 
