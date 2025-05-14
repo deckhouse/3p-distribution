@@ -17,7 +17,6 @@ import (
 	dcontext "github.com/docker/distribution/context"
 	"github.com/docker/distribution/registry/client"
 	"github.com/docker/distribution/registry/client/auth"
-	"github.com/docker/distribution/registry/client/auth/challenge"
 	"github.com/docker/distribution/registry/client/transport"
 	"github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
@@ -161,11 +160,6 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		Transport: httpTransport,
 	}
 
-	cs, err := configureTokenAuth(config.Username, config.Password, config.RemoteURL, httpClient)
-	if err != nil {
-		return nil, err
-	}
-
 	return &proxyingRegistry{
 		embedded:       registry,
 		scheduler:      s,
@@ -174,12 +168,12 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		httpTransport:  httpTransport,
 		remotePathOnly: remotePathOnly,
 		localPathAlias: localPathAlias,
-		authChallenger: &remoteAuthChallenger{
-			remoteURL:  *remoteURL,
-			httpClient: httpClient,
-			cm:         challenge.NewSimpleManager(),
-			cs:         cs,
-		},
+		authChallenger: newAuthChallenger(
+			*remoteURL,
+			httpClient,
+			config.Username,
+			config.Password,
+		),
 		noCache: config.NoCache,
 	}, nil
 }
@@ -207,7 +201,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	tkopts := auth.TokenHandlerOptions{
 		Transport:   pr.httpTransport,
-		Credentials: c.credentialStore(),
+		Credentials: c.tokenCredentials(),
 		Scopes: []auth.Scope{
 			auth.RepositoryScope{
 				Repository: remoteRepositoryName.Name(),
@@ -220,7 +214,7 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 	tr := transport.NewTransport(pr.httpTransport,
 		auth.NewAuthorizer(c.challengeManager(),
 			auth.NewTokenHandlerWithOptions(tkopts),
-			auth.NewBasicHandler(c.credentialStore()),
+			auth.NewBasicHandler(c.basicCredentials()),
 		),
 	)
 

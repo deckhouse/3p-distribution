@@ -75,7 +75,11 @@ func (m *mockChallenger) tryEstablishChallenges(context.Context) error {
 	return nil
 }
 
-func (m *mockChallenger) credentialStore() auth.CredentialStore {
+func (m *mockChallenger) basicCredentials() auth.CredentialStore {
+	return nil
+}
+
+func (m *mockChallenger) tokenCredentials() auth.CredentialStore {
 	return nil
 }
 
