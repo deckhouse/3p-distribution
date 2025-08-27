@@ -142,7 +142,7 @@ github.com/cncf/xds/go/xds/type/v3
 # github.com/dgrijalva/jwt-go v3.2.0+incompatible
 ## explicit
 github.com/dgrijalva/jwt-go
-# github.com/distribution/reference v0.5.0
+# github.com/distribution/reference v0.6.0
 ## explicit; go 1.20
 github.com/distribution/reference
 # github.com/dnaeon/go-vcr v1.1.0
@@ -150,7 +150,7 @@ github.com/distribution/reference
 # github.com/docker/go-metrics v0.0.1
 ## explicit; go 1.11
 github.com/docker/go-metrics
-# github.com/docker/libtrust v0.0.0-20150114040149-fa567046d9b1
+# github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7
 ## explicit
 github.com/docker/libtrust
 # github.com/envoyproxy/go-control-plane/envoy v1.32.4
@@ -283,8 +283,8 @@ github.com/munnerz/goautoneg
 ## explicit; go 1.13
 github.com/opencontainers/go-digest
 github.com/opencontainers/go-digest/digestset
-# github.com/opencontainers/image-spec v1.0.2
-## explicit
+# github.com/opencontainers/image-spec v1.1.1
+## explicit; go 1.18
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
 # github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10

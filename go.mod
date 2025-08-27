@@ -8,14 +8,14 @@ require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/bshuster-repo/logrus-logstash-hook v1.1.0
-	github.com/distribution/reference v0.5.0
+	github.com/distribution/reference v0.6.0
 	github.com/docker/go-metrics v0.0.1
-	github.com/docker/libtrust v0.0.0-20150114040149-fa567046d9b1
+	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7
 	github.com/gomodule/redigo v1.9.2
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.2
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	golang.org/x/crypto v0.41.0
