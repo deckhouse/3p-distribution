@@ -1,11 +1,11 @@
 module github.com/docker/distribution
 
-go 1.23
+go 1.24
 
 require (
 	github.com/Azure/azure-sdk-for-go v16.2.1+incompatible
 	github.com/Shopify/logrus-bugsnag v0.0.0-20171204204709-577dee27f20d
-	github.com/aws/aws-sdk-go v1.14.30
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/bshuster-repo/logrus-logstash-hook v0.0.0-20170517171303-d2c0ecc1836d
 	github.com/bugsnag/bugsnag-go v1.0.3-0.20141110184014-b1d153021fcd
 	github.com/distribution/reference v0.5.0
@@ -40,7 +40,7 @@ require (
 	github.com/go-ini/ini v1.21.2-0.20161120031036-2ba15ac2dc9c // indirect
 	github.com/golang/protobuf v0.0.0-20160321223353-8d92cf5fc15a // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jmespath/go-jmespath v0.0.0-20160803190731-bd40a432e4c7 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/marstr/guid v1.1.0 // indirect
