@@ -11,7 +11,7 @@ require (
 	github.com/distribution/reference v0.5.0
 	github.com/docker/go-metrics v0.0.1
 	github.com/docker/libtrust v0.0.0-20150114040149-fa567046d9b1
-	github.com/garyburd/redigo v0.0.0-20150301180006-535138d7bcd7
+	github.com/gomodule/redigo v1.9.2
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/opencontainers/go-digest v1.0.0
