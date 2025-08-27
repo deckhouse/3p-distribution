@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"reflect"
 	"strings"
@@ -59,9 +58,6 @@ type Configuration struct {
 
 	// Middleware lists all middlewares to be used by the registry.
 	Middleware map[string][]Middleware `yaml:"middleware,omitempty"`
-
-	// Reporting is the configuration for error reporting
-	Reporting Reporting `yaml:"reporting,omitempty"`
 
 	// HTTP contains configuration parameters for the registry's http
 	// interface.
@@ -515,13 +511,13 @@ func (auth Auth) Parameters() Parameters {
 }
 
 // setParameter changes the parameter at the provided key to the new value
-func (auth Auth) setParameter(key string, value interface{}) {
+func (auth Auth) setParameter(key string, value any) {
 	auth[auth.Type()][key] = value
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface
 // Unmarshals a single item map into a Storage or a string into a Storage type with no parameters
-func (auth *Auth) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (auth *Auth) UnmarshalYAML(unmarshal func(any) error) error {
 	var m map[string]Parameters
 	err := unmarshal(&m)
 	if err == nil {
@@ -593,35 +589,6 @@ type Ignore struct {
 	Actions    []string `yaml:"actions"`    // ignore action types
 }
 
-// Reporting defines error reporting methods.
-type Reporting struct {
-	// Bugsnag configures error reporting for Bugsnag (bugsnag.com).
-	Bugsnag BugsnagReporting `yaml:"bugsnag,omitempty"`
-	// NewRelic configures error reporting for NewRelic (newrelic.com)
-	NewRelic NewRelicReporting `yaml:"newrelic,omitempty"`
-}
-
-// BugsnagReporting configures error reporting for Bugsnag (bugsnag.com).
-type BugsnagReporting struct {
-	// APIKey is the Bugsnag api key.
-	APIKey string `yaml:"apikey,omitempty"`
-	// ReleaseStage tracks where the registry is deployed.
-	// Examples: production, staging, development
-	ReleaseStage string `yaml:"releasestage,omitempty"`
-	// Endpoint is used for specifying an enterprise Bugsnag endpoint.
-	Endpoint string `yaml:"endpoint,omitempty"`
-}
-
-// NewRelicReporting configures error reporting for NewRelic (newrelic.com)
-type NewRelicReporting struct {
-	// LicenseKey is the NewRelic user license key
-	LicenseKey string `yaml:"licensekey,omitempty"`
-	// Name is the component name of the registry in NewRelic
-	Name string `yaml:"name,omitempty"`
-	// Verbose configures debug output to STDOUT
-	Verbose bool `yaml:"verbose,omitempty"`
-}
-
 // Middleware configures named middlewares to be applied at injection points.
 type Middleware struct {
 	// Name the middleware registers itself as
@@ -669,7 +636,7 @@ type Proxy struct {
 // Configuration.Abc may be replaced by the value of REGISTRY_ABC,
 // Configuration.Abc.Xyz may be replaced by the value of REGISTRY_ABC_XYZ, and so forth
 func Parse(rd io.Reader) (*Configuration, error) {
-	in, err := ioutil.ReadAll(rd)
+	in, err := io.ReadAll(rd)
 	if err != nil {
 		return nil, err
 	}
