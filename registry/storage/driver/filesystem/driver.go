@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -292,7 +293,14 @@ func (d *driver) URLFor(ctx context.Context, path string, options map[string]int
 // Walk traverses a filesystem defined within driver, starting
 // from the given path, calling f on each file
 func (d *driver) Walk(ctx context.Context, path string, f storagedriver.WalkFn) error {
-	return storagedriver.WalkFallback(ctx, d, path, f)
+	err := storagedriver.WalkFallback(ctx, d, path, f)
+
+	var notFoundErr storagedriver.PathNotFoundError
+	if errors.As(err, &notFoundErr) && notFoundErr.Path == path {
+		return nil
+	}
+
+	return err
 }
 
 // fullPath returns the absolute path of a key within the Driver's storage.
