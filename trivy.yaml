@@ -1,0 +1,17 @@
+scan:
+  skip-files:
+    # Examples of integration with other products; keys and certificates specifically created for these purposes.
+    # Content not included in files or packages.
+    - "contrib/docker-integration/nginx/ssl/registry-ca+client-key.pem"
+    - "contrib/docker-integration/tokenserver/certs/auth.localregistry.key"
+    - "contrib/docker-integration/tokenserver-oauth/certs/auth.localregistry.key"
+    - "contrib/docker-integration/tokenserver-oauth/certs/localregistry.key"
+    - "contrib/docker-integration/tokenserver/certs/localregistry.key"
+    - "contrib/docker-integration/nginx/ssl/registry-ca+localregistry-key.pem"
+    - "contrib/docker-integration/nginx/ssl/registry-ca+localhost-key.pem"
+    - "contrib/docker-integration/nginx/ssl/registry-noca+localhost-key.pem"
+    - "contrib/docker-integration/nginx/ssl/registry-noca+localregistry-key.pem"
+    - "contrib/docker-integration/nginx/ssl/registry-noca+client-key.pem"
+    - "contrib/docker-integration/tokenserver/certs/signing.key"
+    - "contrib/docker-integration/tokenserver-oauth/certs/signing.key"
+    - "contrib/docker-integration/malevolent-certs/localregistry.key"
