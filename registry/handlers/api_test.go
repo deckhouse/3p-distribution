@@ -885,7 +885,7 @@ func testBlobDelete(t *testing.T, env *testEnv, args blobArgs) {
 	ref, _ := reference.WithDigest(imageName, layerDigest)
 	layerURL, err := env.builder.BuildBlobURL(ref)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	// ---------------
 	// Delete a layer
@@ -1131,6 +1131,10 @@ func (dr *mockErrorDriver) GetContent(ctx context.Context, path string) ([]byte,
 		}
 	}
 	return nil, errors.New("Unknown storage error")
+}
+
+func (dr *mockErrorDriver) Stat(ctx context.Context, path string) (storagedriver.FileInfo, error) {
+	return nil, storagedriver.PathNotFoundError{Path: path}
 }
 
 func TestGetManifestWithStorageError(t *testing.T) {
