@@ -59,13 +59,10 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		return nil, err
 	}
 
-	var (
-		s   *scheduler.TTLExpirationScheduler
-		ttl time.Duration
-	)
+	var s *scheduler.TTLExpirationScheduler
 
-	// Default TTL is 7 days
-	if config.TTL <= 0 {
+	ttl := config.TTL
+	if ttl <= 0 {
 		ttl = schedulerDefaultTTL
 	}
 
