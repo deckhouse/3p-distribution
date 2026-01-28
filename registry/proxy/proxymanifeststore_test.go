@@ -124,7 +124,7 @@ func newManifestStoreTestEnv(t *testing.T, localName, remoteName, tag string) *m
 
 	manifestDigest, err := populateRepo(ctx, t, truthRepo, remoteName, tag)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 
 	localRegistry, err := storage.NewRegistry(ctx, inmemory.New(), storage.BlobDescriptorCacheProvider(memory.NewInMemoryBlobDescriptorCacheProvider()), storage.EnableRedirect, storage.DisableDigestResumption, storage.Schema1SigningKey(k), storage.EnableSchema1)
@@ -145,7 +145,7 @@ func newManifestStoreTestEnv(t *testing.T, localName, remoteName, tag string) *m
 		stats:     make(map[string]int),
 	}
 
-	s := scheduler.New(ctx, 24*7*time.Hour, inmemory.New(), localRegistry, "/scheduler-state.json")
+	s := scheduler.New(ctx, 24*7*time.Hour, inmemory.New(), "/scheduler-state.json")
 	return &manifestStoreTestEnv{
 		manifestDigest: manifestDigest,
 		manifests: cachedManifestStore{
@@ -202,7 +202,7 @@ func populateRepo(ctx context.Context, t *testing.T, repository distribution.Rep
 
 	ms, err := repository.Manifests(ctx)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	}
 	dgst, err := ms.Put(ctx, sm)
 	if err != nil {
