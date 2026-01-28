@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -23,7 +24,10 @@ import (
 	"github.com/docker/distribution/registry/storage/driver"
 )
 
-var repositoryTTL = 24 * 7 * time.Hour
+const (
+	schedulerStateFilePath = "/scheduler-state.json"
+	schedulerDefaultTTL    = 24 * 7 * time.Hour
+)
 
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
@@ -55,23 +59,26 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		return nil, err
 	}
 
-	var s *scheduler.TTLExpirationScheduler
-	var ttl *time.Duration
+	var (
+		s   *scheduler.TTLExpirationScheduler
+		ttl time.Duration
+	)
 
-	if config.NoCache {
-		ttl = nil
-	} else if config.TTL == nil {
-		// Default TTL is 7 days
-		ttl = &repositoryTTL
-	} else if *config.TTL > 0 {
-		ttl = config.TTL
-	} else {
-		// TTL is disabled, never expire
-		ttl = nil
+	// Default TTL is 7 days
+	if config.TTL <= 0 {
+		ttl = schedulerDefaultTTL
 	}
 
-	if ttl != nil {
-		s = scheduler.New(ctx, *ttl, driver, "/scheduler-state.json")
+	if config.NoCache {
+		if err := cleanupStorage(ctx, driver); err != nil {
+			return nil, fmt.Errorf("failed to clean up storage: %w", err)
+		}
+	} else {
+		if err := cleanupNonCacheStorage(ctx, driver); err != nil {
+			return nil, fmt.Errorf("failed to clean up non-cache storage: %w", err)
+		}
+
+		s = scheduler.New(ctx, ttl, driver, schedulerStateFilePath)
 
 		v := storage.NewVacuum(ctx, driver)
 		s.OnBlobExpire(func(ref reference.Reference) error {
@@ -372,4 +379,47 @@ func (pr *proxiedRepository) Named() reference.Named {
 
 func (pr *proxiedRepository) Tags(ctx context.Context) distribution.TagService {
 	return pr.tags
+}
+
+func CleanupCacheStorage(ctx context.Context, storage driver.StorageDriver) error {
+	exists, err := scheduleStateExists(ctx, storage)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return cleanupStorage(ctx, storage)
+	}
+	return nil
+}
+
+func cleanupNonCacheStorage(ctx context.Context, storage driver.StorageDriver) error {
+	exists, err := scheduleStateExists(ctx, storage)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return cleanupStorage(ctx, storage)
+	}
+	return nil
+}
+
+func scheduleStateExists(ctx context.Context, storage driver.StorageDriver) (bool, error) {
+	_, err := storage.Stat(ctx, schedulerStateFilePath)
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &driver.PathNotFoundError{}):
+		return false, nil
+	default:
+		return false, fmt.Errorf("stat %q: %w", schedulerStateFilePath, err)
+	}
+}
+
+func cleanupStorage(ctx context.Context, storage driver.StorageDriver) error {
+	if err := storage.Delete(ctx, "/"); err != nil {
+		if !errors.As(err, &driver.PathNotFoundError{}) {
+			return fmt.Errorf("cleanup storage: %w", err)
+		}
+	}
+	return nil
 }

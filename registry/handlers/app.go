@@ -33,7 +33,6 @@ import (
 	"github.com/docker/distribution/registry/storage"
 	memorycache "github.com/docker/distribution/registry/storage/cache/memory"
 	rediscache "github.com/docker/distribution/registry/storage/cache/redis"
-	"github.com/docker/distribution/registry/storage/driver"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/docker/distribution/registry/storage/driver/factory"
 	storagemiddleware "github.com/docker/distribution/registry/storage/driver/middleware"
@@ -318,29 +317,19 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 		dcontext.GetLogger(app).Debugf("configured %q access controller", authType)
 	}
 
-	// configure as a pull through cache
-	if config.Proxy.RemoteURL == "" || (config.Proxy.TTL != nil && *config.Proxy.TTL <= 0) || config.Proxy.NoCache {
-		// Remove "/scheduler-state.json"
-		pathToStateFile := "/scheduler-state.json"
-		if _, err := app.driver.Stat(ctx, pathToStateFile); err != nil {
-			switch err := err.(type) {
-			case driver.PathNotFoundError:
-			default:
-				panic(err.Error())
-			}
-		} else {
-			if err := app.driver.Delete(ctx, pathToStateFile); err != nil {
-				panic(err.Error())
-			}
-		}
-	}
 	if config.Proxy.RemoteURL != "" {
+		// Run proxy
 		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
 		if err != nil {
 			panic(err.Error())
 		}
 		app.isCache = true
 		dcontext.GetLogger(app).Info("Registry configured as a proxy cache to ", config.Proxy.RemoteURL)
+	} else {
+		// Cleanup old Proxy сache data
+		if err := proxy.CleanupCacheStorage(ctx, app.driver); err != nil {
+			panic(fmt.Sprintf("failed to clean up cache storage: %v", err))
+		}
 	}
 	var ok bool
 	app.repoRemover, ok = app.registry.(distribution.RepositoryRemover)

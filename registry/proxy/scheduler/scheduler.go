@@ -114,7 +114,7 @@ func (ttles *TTLExpirationScheduler) Start() error {
 	ttles.Lock()
 	defer ttles.Unlock()
 
-	err := ttles.readState()
+	err := ttles.initState()
 	if err != nil {
 		return err
 	}
@@ -239,11 +239,11 @@ func (ttles *TTLExpirationScheduler) writeState() error {
 	return nil
 }
 
-func (ttles *TTLExpirationScheduler) readState() error {
+func (ttles *TTLExpirationScheduler) initState() error {
 	if _, err := ttles.driver.Stat(ttles.ctx, ttles.pathToStateFile); err != nil {
 		switch err := err.(type) {
 		case driver.PathNotFoundError:
-			return nil
+			return ttles.writeState()
 		default:
 			return err
 		}

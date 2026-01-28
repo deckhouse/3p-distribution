@@ -30,6 +30,24 @@ func testRefs(t *testing.T) (reference.Reference, reference.Reference, reference
 	return ref1, ref2, ref3
 }
 
+func TestInitState(t *testing.T) {
+	ttl := 10 * time.Millisecond
+	storage := inmemory.New()
+	stateFilePath := "/ttl"
+
+	ctx := t.Context()
+	s := New(ctx, ttl, storage, stateFilePath)
+
+	err := s.Start()
+	if err != nil {
+		t.Fatalf("failed to start scheduler: %v", err)
+	}
+
+	if _, err := storage.Stat(ctx, stateFilePath); err != nil {
+		t.Fatalf("expected state file %q to exist in storage: %v", stateFilePath, err)
+	}
+}
+
 func TestSchedule(t *testing.T) {
 	fs := inmemory.New()
 	timeUnit := time.Millisecond
