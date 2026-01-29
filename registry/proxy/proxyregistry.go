@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -21,11 +20,6 @@ import (
 	"github.com/docker/distribution/registry/proxy/scheduler"
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/driver"
-)
-
-const (
-	schedulerStateFilePath = "/scheduler-state.json"
-	schedulerDefaultTTL    = 24 * 7 * time.Hour
 )
 
 // proxyingRegistry fetches content from a remote registry and caches it locally
