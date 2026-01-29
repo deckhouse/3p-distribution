@@ -619,10 +619,9 @@ type Proxy struct {
 	// CA specifies the path to the custom CA file for the remote registry (RemoteURL)
 	CA *string `yaml:"ca,omitempty"`
 
-	// TTL is the expiry time of the content and will be cleaned up when it expires
-	// if not set, defaults to 7 * 24 hours
-	// If set to zero, will never expire cache
-	TTL *time.Duration `yaml:"ttl,omitempty"`
+	// TTL is the expiry time of the content and will be cleaned up when it expires.
+	// If not set or less than 0, defaults to 7 days (7 * 24 hours)
+	TTL time.Duration `yaml:"ttl,omitempty"`
 
 	// NoCache explicitly disables the cache for this proxy.
 	NoCache bool `yaml:"nocache,omitempty"`

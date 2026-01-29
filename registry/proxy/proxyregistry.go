@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -22,8 +21,6 @@ import (
 	"github.com/docker/distribution/registry/storage"
 	"github.com/docker/distribution/registry/storage/driver"
 )
-
-var repositoryTTL = 24 * 7 * time.Hour
 
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
@@ -56,22 +53,22 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 	}
 
 	var s *scheduler.TTLExpirationScheduler
-	var ttl *time.Duration
 
-	if config.NoCache {
-		ttl = nil
-	} else if config.TTL == nil {
-		// Default TTL is 7 days
-		ttl = &repositoryTTL
-	} else if *config.TTL > 0 {
-		ttl = config.TTL
-	} else {
-		// TTL is disabled, never expire
-		ttl = nil
+	ttl := config.TTL
+	if ttl <= 0 {
+		ttl = schedulerDefaultTTL
 	}
 
-	if ttl != nil {
-		s = scheduler.New(ctx, *ttl, driver, registry, "/scheduler-state.json")
+	if config.NoCache {
+		if err := cleanupStorage(ctx, driver); err != nil {
+			return nil, fmt.Errorf("failed to clean up storage: %w", err)
+		}
+	} else {
+		if err := cleanupNonCacheStorage(ctx, driver); err != nil {
+			return nil, fmt.Errorf("failed to clean up non-cache storage: %w", err)
+		}
+
+		s = scheduler.New(ctx, ttl, driver, schedulerStateFilePath)
 
 		v := storage.NewVacuum(ctx, driver)
 		s.OnBlobExpire(func(ref reference.Reference) error {
