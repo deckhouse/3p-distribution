@@ -30,6 +30,7 @@ import (
 	registrymiddleware "github.com/docker/distribution/registry/middleware/registry"
 	repositorymiddleware "github.com/docker/distribution/registry/middleware/repository"
 	"github.com/docker/distribution/registry/proxy"
+	"github.com/docker/distribution/registry/quota"
 	"github.com/docker/distribution/registry/storage"
 	memorycache "github.com/docker/distribution/registry/storage/cache/memory"
 	rediscache "github.com/docker/distribution/registry/storage/cache/redis"
@@ -65,6 +66,7 @@ type App struct {
 	registry         distribution.Namespace         // registry is the primary registry backend for the app instance.
 	repoRemover      distribution.RepositoryRemover // repoRemover provides ability to delete repos
 	accessController auth.AccessController          // main access controller for application
+	quotaEnforcer    *quota.Enforcer                // per-project storage quota enforcer (nil when disabled)
 
 	// httpHost is a parsed representation of the http.host parameter from
 	// the configuration. Only the Scheme and Host fields are used.
@@ -346,6 +348,15 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 	app.repoRemover, ok = app.registry.(distribution.RepositoryRemover)
 	if !ok {
 		dcontext.GetLogger(app).Warnf("Registry does not implement RempositoryRemover. Will not be able to delete repos and tags")
+	}
+
+	if config.Quota.Endpoint != "" {
+		enforcer, err := newQuotaEnforcer(config.Quota, app.registry)
+		if err != nil {
+			panic(fmt.Sprintf("unable to configure project quota enforcement: %v", err))
+		}
+		app.quotaEnforcer = enforcer
+		dcontext.GetLogger(app).Infof("Project quota enforcement enabled (endpoint=%s)", config.Quota.Endpoint)
 	}
 
 	return app

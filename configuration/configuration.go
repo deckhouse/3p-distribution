@@ -186,6 +186,9 @@ type Configuration struct {
 
 	Proxy Proxy `yaml:"proxy,omitempty"`
 
+	// Quota enables per-project (namespace) storage quota enforcement on push.
+	Quota Quota `yaml:"quota,omitempty"`
+
 	// Compatibility is used for configurations of working with older or deprecated features.
 	Compatibility struct {
 		// Schema1 configures how schema1 manifests will be handled
@@ -597,6 +600,17 @@ type Middleware struct {
 	Disabled bool `yaml:"disabled,omitempty"`
 	// Map of parameters that will be passed to the middleware's initialization function
 	Options Parameters `yaml:"options"`
+}
+
+// Quota configures per-project storage quota enforcement. When Endpoint is set,
+// the registry checks each blob upload against the project's quota by asking the
+// module apiserver for the namespace limit.
+type Quota struct {
+	// Endpoint is the base URL of the apiserver quota service (e.g.
+	// "https://apiserver.d8-payload-registry.svc"). Empty disables enforcement.
+	Endpoint string `yaml:"endpoint,omitempty"`
+	// CA is the path to a PEM CA bundle used to verify the endpoint's TLS cert.
+	CA string `yaml:"ca,omitempty"`
 }
 
 // Proxy configures the registry as a pull through cache
