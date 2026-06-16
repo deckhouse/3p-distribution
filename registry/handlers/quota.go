@@ -15,6 +15,7 @@ import (
 	"github.com/docker/distribution/configuration"
 	"github.com/docker/distribution/registry/api/errcode"
 	"github.com/docker/distribution/registry/quota"
+	"github.com/opencontainers/go-digest"
 )
 
 // namespaceOf returns the first path segment of a repository name (the project /
@@ -99,12 +100,48 @@ func (rf registryFootprint) Footprint(ctx context.Context, namespace string) (in
 		if err != nil {
 			return nil, fmt.Errorf("open repository %q: %w", repo, err)
 		}
-		rb, ok := r.Blobs(ctx).(quota.RepoBlobs)
-		if !ok {
-			return nil, fmt.Errorf("repository %q blobs are not enumerable", repo)
-		}
-		return rb, nil
+		return manifestRepoBlobs{repo: r}, nil
 	}
 
 	return quota.StorageFootprint(ctx, namespace, enumerator, blobsFor)
+}
+
+// manifestRepoBlobs enumerates a repository's blobs through its manifests (the
+// supported public API: the per-repository blob store does not expose layer
+// enumeration). It yields the blobs referenced by the repository's manifests
+// (layers and configs) and stats them via the blob store.
+//
+// Note: this is the "referenced" footprint. Counting orphaned (uploaded but
+// unreferenced) blobs as well — to fully defeat the push-then-delete attack —
+// requires enumerating the repository's `_layers`, which distribution does not
+// expose; that is a planned follow-up.
+type manifestRepoBlobs struct {
+	repo distribution.Repository
+}
+
+func (m manifestRepoBlobs) Enumerate(ctx context.Context, fn func(dgst digest.Digest) error) error {
+	ms, err := m.repo.Manifests(ctx)
+	if err != nil {
+		return err
+	}
+	enum, ok := ms.(distribution.ManifestEnumerator)
+	if !ok {
+		return nil
+	}
+	return enum.Enumerate(ctx, func(dgst digest.Digest) error {
+		man, err := ms.Get(ctx, dgst)
+		if err != nil {
+			return nil // skip manifests that cannot be read
+		}
+		for _, ref := range man.References() {
+			if err := fn(ref.Digest); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (m manifestRepoBlobs) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
+	return m.repo.Blobs(ctx).Stat(ctx, dgst)
 }
