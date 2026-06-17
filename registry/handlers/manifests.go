@@ -416,6 +416,8 @@ func (imh *manifestHandler) PutManifest(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Docker-Content-Digest", imh.Digest.String())
 	w.WriteHeader(http.StatusCreated)
 
+	dcontext.GetLoggerWithFields(imh, auditFields("push", imh.Repository.Named().Name(), imh.Tag, imh.Digest), auth.UserNameKey).Info("audit")
+
 	dcontext.GetLogger(imh).Debug("Succeeded in putting manifest!")
 }
 
@@ -534,4 +536,6 @@ func (imh *manifestHandler) DeleteManifest(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+
+	dcontext.GetLoggerWithFields(imh, auditFields("delete", imh.Repository.Named().Name(), imh.Tag, imh.Digest), auth.UserNameKey).Info("audit")
 }
