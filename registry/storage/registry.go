@@ -9,6 +9,7 @@ import (
 	"github.com/docker/distribution/registry/storage/cache"
 	storagedriver "github.com/docker/distribution/registry/storage/driver"
 	"github.com/docker/libtrust"
+	"github.com/opencontainers/go-digest"
 )
 
 // registry is the top-level implementation of Registry for use in the storage
@@ -333,4 +334,32 @@ func (repo *repository) Blobs(ctx context.Context) distribution.BlobStore {
 		deleteEnabled:          repo.registry.deleteEnabled,
 		resumableDigestEnabled: repo.resumableDigestEnabled,
 	}
+}
+
+// EnumerateLayerLinks calls fn for each layer-blob digest linked under the
+// repository's `_layers` directory. This includes blobs that are not (or no
+// longer) referenced by any manifest, so it reflects the repository's physical
+// footprint; blobs already reclaimed by GC are skipped. It is used for
+// per-project storage quota accounting.
+func (repo *repository) EnumerateLayerLinks(ctx context.Context, fn func(dgst digest.Digest) error) error {
+	statter := &linkedBlobStatter{
+		blobStore:   repo.blobStore,
+		repository:  repo,
+		linkPathFns: []linkPathFunc{blobLinkPath},
+	}
+
+	bs := &linkedBlobStore{
+		registry:               repo.registry,
+		blobStore:              repo.blobStore,
+		blobServer:             repo.blobServer,
+		blobAccessController:   statter,
+		repository:             repo,
+		ctx:                    ctx,
+		linkPathFns:            []linkPathFunc{blobLinkPath},
+		linkDirectoryPathSpec:  layersPathSpec{name: repo.name.Name()},
+		deleteEnabled:          repo.registry.deleteEnabled,
+		resumableDigestEnabled: repo.resumableDigestEnabled,
+	}
+
+	return bs.Enumerate(ctx, fn)
 }

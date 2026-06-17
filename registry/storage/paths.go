@@ -206,6 +206,8 @@ func pathFor(spec pathSpec) (string, error) {
 		blobLinkPathComponents := append(repoPrefix, v.name, "_layers")
 
 		return path.Join(path.Join(append(blobLinkPathComponents, components...)...), "link"), nil
+	case layersPathSpec:
+		return path.Join(append(repoPrefix, v.name, "_layers")...), nil
 	case blobsPathSpec:
 		blobsPathPrefix := append(rootPrefix, "blobs")
 		return path.Join(blobsPathPrefix...), nil
@@ -353,6 +355,15 @@ type layerLinkPathSpec struct {
 }
 
 func (layerLinkPathSpec) pathSpec() {}
+
+// layersPathSpec describes the root directory of a repository's layer links
+// (<root>/v2/repositories/<name>/_layers), used to enumerate the blobs a
+// repository physically holds, including blobs not referenced by any manifest.
+type layersPathSpec struct {
+	name string
+}
+
+func (layersPathSpec) pathSpec() {}
 
 // blobAlgorithmReplacer does some very simple path sanitization for user
 // input. Paths should be "safe" before getting this far due to strict digest

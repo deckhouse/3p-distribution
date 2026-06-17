@@ -100,48 +100,34 @@ func (rf registryFootprint) Footprint(ctx context.Context, namespace string) (in
 		if err != nil {
 			return nil, fmt.Errorf("open repository %q: %w", repo, err)
 		}
-		return manifestRepoBlobs{repo: r}, nil
+		return layerRepoBlobs{repo: r}, nil
 	}
 
 	return quota.StorageFootprint(ctx, namespace, enumerator, blobsFor)
 }
 
-// manifestRepoBlobs enumerates a repository's blobs through its manifests (the
-// supported public API: the per-repository blob store does not expose layer
-// enumeration). It yields the blobs referenced by the repository's manifests
-// (layers and configs) and stats them via the blob store.
-//
-// Note: this is the "referenced" footprint. Counting orphaned (uploaded but
-// unreferenced) blobs as well — to fully defeat the push-then-delete attack —
-// requires enumerating the repository's `_layers`, which distribution does not
-// expose; that is a planned follow-up.
-type manifestRepoBlobs struct {
+// layerEnumerator is implemented by the storage repository to enumerate the
+// blobs physically linked under a repository's `_layers` (including orphans).
+type layerEnumerator interface {
+	EnumerateLayerLinks(ctx context.Context, fn func(dgst digest.Digest) error) error
+}
+
+// layerRepoBlobs yields a repository's physical blob footprint: every blob
+// linked under `_layers` (referenced or orphaned, until GC reclaims it). This is
+// what defeats the push-then-delete-manifests evasion — deleting manifests does
+// not drop usage until GC removes the layer links.
+type layerRepoBlobs struct {
 	repo distribution.Repository
 }
 
-func (m manifestRepoBlobs) Enumerate(ctx context.Context, fn func(dgst digest.Digest) error) error {
-	ms, err := m.repo.Manifests(ctx)
-	if err != nil {
-		return err
-	}
-	enum, ok := ms.(distribution.ManifestEnumerator)
+func (l layerRepoBlobs) Enumerate(ctx context.Context, fn func(dgst digest.Digest) error) error {
+	le, ok := l.repo.(layerEnumerator)
 	if !ok {
-		return nil
+		return fmt.Errorf("repository does not support layer enumeration")
 	}
-	return enum.Enumerate(ctx, func(dgst digest.Digest) error {
-		man, err := ms.Get(ctx, dgst)
-		if err != nil {
-			return nil // skip manifests that cannot be read
-		}
-		for _, ref := range man.References() {
-			if err := fn(ref.Digest); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	return le.EnumerateLayerLinks(ctx, fn)
 }
 
-func (m manifestRepoBlobs) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
-	return m.repo.Blobs(ctx).Stat(ctx, dgst)
+func (l layerRepoBlobs) Stat(ctx context.Context, dgst digest.Digest) (distribution.Descriptor, error) {
+	return l.repo.Blobs(ctx).Stat(ctx, dgst)
 }
