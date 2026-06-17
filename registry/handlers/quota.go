@@ -57,7 +57,10 @@ func newQuotaEnforcer(cfg configuration.Quota, registry distribution.Namespace) 
 		return nil, err
 	}
 	limits := quota.NewLimitClient(cfg.Endpoint, httpClient)
-	return quota.NewEnforcer(limits, registryFootprint{registry: registry}), nil
+	enforcer := quota.NewEnforcer(limits, registryFootprint{registry: registry})
+	// The same client reports usage back so it can be surfaced in the CRD status.
+	enforcer.SetUsageReporter(limits)
+	return enforcer, nil
 }
 
 func quotaHTTPClient(caPath string) (*http.Client, error) {

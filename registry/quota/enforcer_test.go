@@ -58,3 +58,35 @@ func TestEnforcerFailsClosedOnFootprintError(t *testing.T) {
 		t.Fatalf("expected a non-quota (fail-closed) error, got %v", err)
 	}
 }
+
+type fakeReporter struct {
+	gotNS   string
+	gotUsed int64
+	called  bool
+}
+
+func (f *fakeReporter) ReportUsage(_ context.Context, ns string, used int64) error {
+	f.called = true
+	f.gotNS = ns
+	f.gotUsed = used
+	return nil
+}
+
+func TestEnforcerReportUsage(t *testing.T) {
+	e := NewEnforcer(fakeLimits{limit: 1000}, fakeFootprint{used: 777})
+	rep := &fakeReporter{}
+	e.SetUsageReporter(rep)
+	if err := e.ReportUsage(context.Background(), "team-a"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !rep.called || rep.gotNS != "team-a" || rep.gotUsed != 777 {
+		t.Fatalf("report: called=%v ns=%q used=%d", rep.called, rep.gotNS, rep.gotUsed)
+	}
+}
+
+func TestEnforcerReportUsageNoReporterIsNoop(t *testing.T) {
+	e := NewEnforcer(fakeLimits{limit: 1000}, fakeFootprint{used: 777})
+	if err := e.ReportUsage(context.Background(), "team-a"); err != nil {
+		t.Fatalf("expected no-op, got %v", err)
+	}
+}

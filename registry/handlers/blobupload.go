@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/distribution/reference"
 	"github.com/docker/distribution"
@@ -283,6 +285,20 @@ func (buh *blobUploadHandler) PutBlobUploadComplete(w http.ResponseWriter, r *ht
 	if err := buh.writeBlobCreatedHeaders(w, desc); err != nil {
 		buh.Errors = append(buh.Errors, errcode.ErrorCodeUnknown.WithDetail(err))
 		return
+	}
+
+	// Asynchronously report the project's new usage so it surfaces in the
+	// PayloadRegistryQuota status. Best-effort; never affects the upload result.
+	if buh.App.quotaEnforcer != nil {
+		namespace := namespaceOf(buh.Repository.Named().Name())
+		logger := dcontext.GetLogger(buh)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := buh.App.quotaEnforcer.ReportUsage(ctx, namespace); err != nil {
+				logger.Warnf("quota usage report failed for %q: %v", namespace, err)
+			}
+		}()
 	}
 }
 

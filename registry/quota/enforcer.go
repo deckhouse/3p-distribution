@@ -22,15 +22,41 @@ type FootprintProvider interface {
 	Footprint(ctx context.Context, namespace string) (int64, error)
 }
 
+// UsageReporter reports a namespace's current usage so it can be surfaced (e.g.
+// in the PayloadRegistryQuota status).
+type UsageReporter interface {
+	ReportUsage(ctx context.Context, namespace string, used int64) error
+}
+
 // Enforcer decides whether a blob of a given size may be admitted to a project.
 type Enforcer struct {
 	limits     LimitProvider
 	footprints FootprintProvider
+	reporter   UsageReporter
 }
 
 // NewEnforcer builds an Enforcer from a limit provider and a footprint provider.
 func NewEnforcer(limits LimitProvider, footprints FootprintProvider) *Enforcer {
 	return &Enforcer{limits: limits, footprints: footprints}
+}
+
+// SetUsageReporter sets an optional reporter used by ReportUsage.
+func (e *Enforcer) SetUsageReporter(r UsageReporter) {
+	e.reporter = r
+}
+
+// ReportUsage computes the namespace's current footprint and reports it through
+// the configured reporter. It is a no-op when no reporter is set. Best-effort:
+// intended to be called asynchronously after a successful upload.
+func (e *Enforcer) ReportUsage(ctx context.Context, namespace string) error {
+	if e.reporter == nil {
+		return nil
+	}
+	used, err := e.footprints.Footprint(ctx, namespace)
+	if err != nil {
+		return err
+	}
+	return e.reporter.ReportUsage(ctx, namespace, used)
 }
 
 // Check returns nil if a blob of `incoming` bytes may be admitted to namespace,

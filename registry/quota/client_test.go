@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"io"
+	"strings"
 	"testing"
 )
 
@@ -52,5 +54,26 @@ func TestLimitClientServerErrorIsError(t *testing.T) {
 	c := NewLimitClient(srv.URL, srv.Client())
 	if _, err := c.Limit(context.Background(), "team-a"); err == nil {
 		t.Fatalf("expected error on server 500, got nil")
+	}
+}
+
+func TestLimitClientReportUsage(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := NewLimitClient(srv.URL, srv.Client())
+	if err := c.ReportUsage(context.Background(), "team-a", 4096); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(gotBody, `"namespace":"team-a"`) || !strings.Contains(gotBody, `"used":4096`) {
+		t.Fatalf("unexpected body: %s", gotBody)
 	}
 }
