@@ -227,15 +227,18 @@ func (buh *blobUploadHandler) PutBlobUploadComplete(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Enforce the per-project storage quota before committing the blob. The blob
-	// data is already staged in the upload; on rejection we cancel it so the
-	// staged data is cleaned up and only GC-reclaimable space is consumed.
+	// Enforce the per-project storage quota before committing the blob. On
+	// rejection we must NOT cancel the upload: cancelling destroys the upload
+	// session, and a client retry of the PUT (go-containerregistry retries on
+	// transient/connection errors) would then resolve to ErrBlobUploadUnknown
+	// (HTTP 404, BLOB_UPLOAD_UNKNOWN) instead of a clean quota error — an
+	// intermittent, confusing failure. We just return the error; the upload's
+	// blobwriter is closed once by closeResources, and the still-staged data is
+	// never committed (so it does not count toward the project footprint, which
+	// enumerates committed layers) and is reclaimed by the stale-upload purge.
 	if buh.App.quotaEnforcer != nil {
 		namespace := namespaceOf(buh.Repository.Named().Name())
 		if qerr := buh.App.quotaEnforcer.Check(buh, namespace, buh.Upload.Size()); qerr != nil {
-			if cancelErr := buh.Upload.Cancel(buh); cancelErr != nil {
-				dcontext.GetLogger(buh).Errorf("error canceling upload after quota rejection: %v", cancelErr)
-			}
 			if errors.Is(qerr, quota.ErrQuotaExceeded) {
 				buh.Errors = append(buh.Errors, ErrorCodeQuotaExceeded.WithDetail(qerr.Error()))
 			} else {
