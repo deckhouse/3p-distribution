@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -448,8 +449,18 @@ func testOCIManifestStorage(t *testing.T, testname string, includeMediaTypes boo
 
 	var manifestDigest digest.Digest
 	if manifestDigest, err = ms.Put(ctx, manifest); err != nil {
-		if err.Error() != "unrecognized manifest schema version 0" {
+		// Assert on the type and the reason, not on the formatted text. The
+		// refusal is a distribution.ErrManifestInvalid, whose Error method adds
+		// a prefix -- and a full-text comparison stops matching the moment that
+		// prefix changes, turning a correct refusal into a test failure while
+		// an incorrect one would still have to produce this exact sentence to
+		// be noticed.
+		var invalid distribution.ErrManifestInvalid
+		if !errors.As(err, &invalid) {
 			t.Fatalf("%s: unexpected error putting manifest: %v", testname, err)
+		}
+		if invalid.Reason != "unrecognized manifest schema version 0" {
+			t.Fatalf("%s: unexpected reason putting manifest: %q", testname, invalid.Reason)
 		}
 		manifest.(*ocischema.DeserializedManifest).Manifest.SchemaVersion = 2
 		if manifestDigest, err = ms.Put(ctx, manifest); err != nil {
