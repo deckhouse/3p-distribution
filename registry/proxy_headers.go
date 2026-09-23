@@ -43,32 +43,59 @@ func proxyHeadersHandler(ctx context.Context, config *configuration.Configuratio
 		certPool.AppendCertsFromPEM(pem)
 
 		filters = append(filters, func(r *http.Request) bool {
-			if r.TLS == nil {
+			if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
 				return false
 			}
 
-			for _, cert := range r.TLS.PeerCertificates {
-				if cert == nil {
-					continue
-				}
-
-				if _, err := cert.Verify(x509.VerifyOptions{
-					Roots: certPool,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsageClientAuth,
-					},
-				}); err != nil {
-					continue
-				}
-
-				if cfg.ClientCert.CN != "" && cert.Subject.CommonName != cfg.ClientCert.CN {
-					continue
-				}
-
-				return true
+			// Only the leaf may decide.
+			//
+			// The listener asks for a client certificate but does not verify it
+			// itself, so r.TLS.PeerCertificates is whatever the peer chose to
+			// send. TLS proves possession of the private key for exactly one of
+			// them: the leaf, PeerCertificates[0], whose key signed the
+			// handshake. Every other element is bytes the peer attached and
+			// proves nothing about who is connecting.
+			//
+			// Deciding on "some element of the chain verifies" therefore lets a
+			// peer holding no CA-issued key claim any source address, by
+			// presenting a leaf it controls with the public part of any
+			// certificate the CA ever issued attached behind it -- the CA's own
+			// certificate included.
+			leaf := r.TLS.PeerCertificates[0]
+			if leaf == nil {
+				return false
 			}
 
-			return false
+			// The rest of the chain is still useful, but only as intermediates:
+			// each one has to be signed by something that chains to a
+			// configured root, which the peer cannot forge. This keeps a client
+			// certificate issued by an intermediate CA working when the CA file
+			// carries only the root.
+			var intermediates *x509.CertPool
+			if len(r.TLS.PeerCertificates) > 1 {
+				intermediates = x509.NewCertPool()
+				for _, cert := range r.TLS.PeerCertificates[1:] {
+					if cert != nil {
+						intermediates.AddCert(cert)
+					}
+				}
+			}
+
+			if _, err := leaf.Verify(x509.VerifyOptions{
+				Roots:         certPool,
+				Intermediates: intermediates,
+				KeyUsages: []x509.ExtKeyUsage{
+					x509.ExtKeyUsageClientAuth,
+				},
+			}); err != nil {
+				return false
+			}
+
+			if cfg.ClientCert.CN != "" && leaf.Subject.CommonName != cfg.ClientCert.CN {
+				return false
+			}
+
+			return true
 		})
 
 		opts = append(opts, fmt.Sprintf("clientcert.ca: \"%v\"", cfg.ClientCert.CA))

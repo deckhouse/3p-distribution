@@ -436,3 +436,77 @@ func manifestDo(t *testing.T, server *httptest.Server, request *http.Request, wh
 // Set FUZZ_ALLOW_KNOWN_5XX=1 to look past it for further defects, which is what
 // the long fuzzing runs do. Unset, the harness reports the finding.
 var allowKnown5xx = os.Getenv("FUZZ_ALLOW_KNOWN_5XX") != ""
+
+// TestManifestPutSchemaVersionIsRejectedAsBadRequest pins the status a manifest
+// with the wrong schema version gets.
+//
+// Both verifyManifest implementations refuse such a manifest, and what matters
+// is how the refusal reaches the client. A bare error from the storage layer is
+// indistinguishable from a storage failure at the API layer and becomes
+// 500 UNKNOWN -- which tells the client the registry broke, when in fact the
+// client sent a manifest the registry does not implement. The contract is
+// 400 MANIFEST_INVALID, for the two media types that carry a schemaVersion.
+func TestManifestPutSchemaVersionIsRejectedAsBadRequest(t *testing.T) {
+	repo := manifestRepoFor(t)
+
+	cases := []struct {
+		name      string
+		mediaType string
+		body      string
+	}{
+		{
+			name:      "schema2 without schemaVersion",
+			mediaType: schema2.MediaTypeManifest,
+			body: fmt.Sprintf(`{
+  "mediaType": %q,
+  "config": {"mediaType": %q, "size": %d, "digest": %q},
+  "layers": [{"mediaType": %q, "size": %d, "digest": %q}]
+}`, schema2.MediaTypeManifest, schema2.MediaTypeImageConfig, repo.configSize, repo.configDigest,
+				schema2.MediaTypeLayer, repo.layerSize, repo.layerDigest),
+		},
+		{
+			name:      "schema2 with an unimplemented schemaVersion",
+			mediaType: schema2.MediaTypeManifest,
+			body: fmt.Sprintf(`{
+  "schemaVersion": 3,
+  "mediaType": %q,
+  "config": {"mediaType": %q, "size": %d, "digest": %q},
+  "layers": [{"mediaType": %q, "size": %d, "digest": %q}]
+}`, schema2.MediaTypeManifest, schema2.MediaTypeImageConfig, repo.configSize, repo.configDigest,
+				schema2.MediaTypeLayer, repo.layerSize, repo.layerDigest),
+		},
+		{
+			name:      "oci without schemaVersion",
+			mediaType: v1.MediaTypeImageManifest,
+			body: fmt.Sprintf(`{
+  "mediaType": %q,
+  "config": {"mediaType": %q, "size": %d, "digest": %q},
+  "layers": [{"mediaType": %q, "size": %d, "digest": %q}]
+}`, v1.MediaTypeImageManifest, v1.MediaTypeImageConfig, repo.configSize, repo.configDigest,
+				v1.MediaTypeImageLayerGzip, repo.layerSize, repo.layerDigest),
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tag := fmt.Sprintf("schemaversion%d", atomic.AddUint64(&manifestFuzzTag, 1))
+			url := repo.server.URL + "/v2/" + repo.name + "/manifests/" + tag
+
+			request, err := http.NewRequest(http.MethodPut, url, strings.NewReader(c.body))
+			if err != nil {
+				t.Fatalf("cannot build the PUT request: %v", err)
+			}
+			request.Header.Set("Content-Type", c.mediaType)
+
+			response, body, _ := manifestDo(t, repo.server, request, "PUT manifest")
+
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("PUT of a manifest the registry does not implement answered %s, expected %s\nbody: %s",
+					response.Status, http.StatusText(http.StatusBadRequest), body)
+			}
+			if !bytes.Contains(body, []byte("MANIFEST_INVALID")) {
+				t.Errorf("the refusal must name MANIFEST_INVALID, got: %s", body)
+			}
+		})
+	}
+}

@@ -105,16 +105,21 @@ func (imh *manifestHandler) GetManifest(w http.ResponseWriter, r *http.Request) 
 			// it's common (but not required) for Accept values to be space separated ("a/b, c/d, e/f")
 			mediaType = strings.TrimSpace(mediaType)
 
-			if mediaType == schema2.MediaTypeManifest {
+			// Compared case-insensitively: a media type's type and subtype are
+			// case-insensitive (RFC 9110 section 8.3.1), so a client that sends
+			// the same type in different case is asking for the same thing. An
+			// exact comparison makes the registry answer such a request as
+			// though the client could not accept the manifest it stores.
+			if strings.EqualFold(mediaType, schema2.MediaTypeManifest) {
 				supports[manifestSchema2] = true
 			}
-			if mediaType == manifestlist.MediaTypeManifestList {
+			if strings.EqualFold(mediaType, manifestlist.MediaTypeManifestList) {
 				supports[manifestlistSchema] = true
 			}
-			if mediaType == v1.MediaTypeImageManifest {
+			if strings.EqualFold(mediaType, v1.MediaTypeImageManifest) {
 				supports[ociSchema] = true
 			}
-			if mediaType == v1.MediaTypeImageIndex {
+			if strings.EqualFold(mediaType, v1.MediaTypeImageIndex) {
 				supports[ociImageIndexSchema] = true
 			}
 		}
@@ -370,6 +375,8 @@ func (imh *manifestHandler) PutManifest(w http.ResponseWriter, r *http.Request) 
 					imh.Errors = append(imh.Errors, v2.ErrorCodeNameInvalid.WithDetail(err))
 				case distribution.ErrManifestUnverified:
 					imh.Errors = append(imh.Errors, v2.ErrorCodeManifestUnverified)
+				case distribution.ErrManifestInvalid:
+					imh.Errors = append(imh.Errors, v2.ErrorCodeManifestInvalid.WithDetail(verificationError.Reason))
 				default:
 					if verificationError == digest.ErrDigestInvalidFormat {
 						imh.Errors = append(imh.Errors, v2.ErrorCodeDigestInvalid)
@@ -378,6 +385,11 @@ func (imh *manifestHandler) PutManifest(w http.ResponseWriter, r *http.Request) 
 					}
 				}
 			}
+		case distribution.ErrManifestInvalid:
+			// The client sent a manifest the registry cannot store. That is a
+			// bad request, not an internal error, so it must not reach the
+			// default branch below and surface as 500 UNKNOWN.
+			imh.Errors = append(imh.Errors, v2.ErrorCodeManifestInvalid.WithDetail(err.Reason))
 		case errcode.Error:
 			imh.Errors = append(imh.Errors, err)
 		default:

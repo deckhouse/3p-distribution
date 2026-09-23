@@ -84,6 +84,21 @@ func (ErrManifestUnverified) Error() string {
 	return "unverified manifest"
 }
 
+// ErrManifestInvalid is returned when a manifest unmarshals but is not one the
+// registry can store -- a schema version it does not implement, for instance.
+//
+// It exists so that the storage layer can say "the client sent something wrong"
+// without knowing about HTTP status codes: a bare error from verifyManifest is
+// indistinguishable from a storage failure at the API layer, and so becomes
+// 500 UNKNOWN for a request that the client, not the registry, got wrong.
+type ErrManifestInvalid struct {
+	Reason string
+}
+
+func (err ErrManifestInvalid) Error() string {
+	return fmt.Sprintf("invalid manifest: %s", err.Reason)
+}
+
 // ErrManifestVerification provides a type to collect errors encountered
 // during manifest verification. Currently, it accepts errors of all types,
 // but it may be narrowed to those involving manifest verification.

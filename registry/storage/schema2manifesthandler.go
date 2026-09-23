@@ -72,7 +72,12 @@ func (ms *schema2ManifestHandler) verifyManifest(ctx context.Context, mnfst sche
 	var errs distribution.ErrManifestVerification
 
 	if mnfst.Manifest.SchemaVersion != 2 {
-		return fmt.Errorf("unrecognized manifest schema version %d", mnfst.Manifest.SchemaVersion)
+		// A typed error rather than a bare one: the API layer maps this to
+		// 400 MANIFEST_INVALID, whereas a bare error falls through to
+		// 500 UNKNOWN -- an internal failure for a manifest the client wrote.
+		return distribution.ErrManifestInvalid{
+			Reason: fmt.Sprintf("unrecognized manifest schema version %d", mnfst.Manifest.SchemaVersion),
+		}
 	}
 
 	if skipDependencyVerification {
