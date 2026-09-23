@@ -1,0 +1,10 @@
+giterminismConfigVersion: 1
+config:
+  goTemplateRendering:
+    allowEnvVariables:
+      - GOPROXY
+  stapel:
+    allowFromLatest: true
+  secrets:
+    allowValueIds:
+      - GOPROXY
