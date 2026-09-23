@@ -1,10 +1,10 @@
 project: distribution-fuzz
 configVersion: 1
 ---
-# builder/golang-debian-1.25 from the base-image map used by prompp-module.
-# A glibc image is required by the shared AWS CLI distribution.
-image: distribution-artifact
-from: registry.deckhouse.io/container-factory@sha256:d962c4d7060e33b696928c3f30fee4a2b017e782975c4e701d8c51c2c17ddecd
+# Same fuzz base as operator-argo/internal-migrate-to-delivery-kit.
+image: distribution-fuzz
+from: registry.flant.com/deckhouse/ssdlc/ci-images/fuzz-go:f2625cb04c7c9cf6002b59c49de8e6e22a0be674
+fromLatest: true
 final: false
 git:
   - add: /
@@ -12,7 +12,31 @@ git:
     stageDependencies:
       install:
         - '**/*'
----
-{{- $_ := set . "ImageName" "distribution" }}
-{{- $_ := set . "FuzzEngine" "go" }}
-{{- include "fuzz image" . }}
+secrets:
+  - id: GOPROXY
+    value: {{ env "GOPROXY" "https://proxy.golang.org" | quote }}
+packages:
+  - type: go-mod
+    workdir: /src
+    env:
+      GOMODCACHE: /fuzz/gomod
+      GOPROXY: "%secret:GOPROXY%"
+shell:
+  install:
+    - cd /src
+    - |
+      cat > Taskfile.yml <<'FUZZ_TASKFILE'
+{{ .Files.Get "Taskfile.fuzz.yml" | trimSuffix "\n" | indent 6 }}
+      FUZZ_TASKFILE
+    - echo /src > /etc/fuzz-workdir
+    - chmod -R a+rwX /src /fuzz/gomod
+imageSpec:
+  config:
+    workingDir: /src
+    labels:
+      io.deckhouse.fuzz.engine: go
+    env:
+      FUZZ_WORKDIR: /src
+      GOMODCACHE: /fuzz/gomod
+      CGO_ENABLED: "0"
+      GOFLAGS: "-mod=vendor"

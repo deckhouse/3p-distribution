@@ -1,9 +1,10 @@
 giterminismConfigVersion: 1
 config:
-  secrets:
+  goTemplateRendering:
     allowEnvVariables:
-      - FUZZ_S3_ENDPOINT
-      - FUZZ_S3_ACCESS_KEY
-      - FUZZ_S3_SECRET_KEY
-      - FUZZ_S3_REPOSITORY
-      - FUZZ_S3_BRANCH_SLUG
+      - GOPROXY
+  stapel:
+    allowFromLatest: true
+  secrets:
+    allowValueIds:
+      - GOPROXY

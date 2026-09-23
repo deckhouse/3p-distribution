@@ -6,42 +6,59 @@ Stronghold, storage-volume-data-manager and Prom++.
 
 ## CI and image
 
-`werf.yaml` prepares `distribution-artifact` from this checkout and invokes
-`include "fuzz image"` from `.werf/defines/fuzz.tmpl`, matching the structure
-used by neighbouring repositories. The template imports the prepared sources,
-installs fuzz tooling, restores the S3 corpus and replays the targets.
+The integration follows [operator-argo's internal-migrate-to-delivery-kit branch](https://fox.flant.com/deckhouse/delivery/operator-argo/-/tree/internal-migrate-to-delivery-kit),
+using delivery-kit `v3.4.0-dk.4` and two shared CI templates from
+`deckhouse/3p/deckhouse/modules-gitlab-ci` at `fuzz-build-replay-templates`:
 
-GitLab CI builds `distribution-fuzz` with werf. The image contains the checkout,
-vendored dependencies, Go, Task, Python, jq and AWS CLI. Its working directory is
-`/src`, with `Taskfile.fuzz.yml` copied to `/src/Taskfile.yml` and the
-`io.deckhouse.fuzz.engine=go` label used by the fuzzing platform.
+1. `Build_Fuzz.gitlab-ci.yml` provides `.fuzz_build` and `.fuzz_replay`.
+   `build_fuzz` builds and pushes `*-fuzz` images, including for merge requests,
+   and saves `images_fuzz_tags_werf.json` and a generated child pipeline as
+   artifacts. `replay_fuzz` triggers that pipeline and waits for its result.
+2. The child includes `Replay_Fuzz.gitlab-ci.yml` at the same ref, replays each
+   image's corpus in a separate container and retains failure logs, JSON events,
+   seeds and reproduction commands under `fuzz-replay/` for seven days.
 
-- Merge requests build locally and replay the default branch's corpus without
-  pushing an image or uploading a build report. The default branch here is
-  `deckhouse`; the common CI template's hardcoded `main` is not used for replay.
-- Default-branch pipelines build and publish using the shared
-  `Build_Fuzz_Images.gitlab-ci.yml` template. It uploads
-  `images_fuzz_tags_werf.json`, including GitLab source metadata, to
-  `s3://anomaloys-materials/build-reports/<project>/<branch-slug>/`.
-- During the build, the corpus is restored from
-  `s3://anomaloys-materials/<project>/<branch-slug>/` and each target is replayed.
-  Any discovery, download or replay failure fails the build. Restored inputs are
-  removed after replay; the platform restores the current corpus at runtime.
-- Continuous fuzzing is run by the platform against the published image. Image
-  builds only replay seeds and the saved corpus.
+Both template refs are kept in sync with the `fuzz_templates_ref` YAML anchor.
+Jobs inherit the shared rules: merge requests, default-branch pipelines and
+schedules; `CLEANUP_REPO=true` skips them. Registry variables are applied to both
+parent jobs so the trigger forwards them to the child pipeline.
+
+Replay restores minimized, recovery and Go cache seeds from
+`s3://anomaloys-materials/<project>/<branch-slug>/<component>/`. MR and scheduled
+replay use `deckhouse` as the baseline instead of the template's `main`.
+Default-branch rules use `CI_COMMIT_REF_SLUG` and enable publication of the build
+report to `s3://anomaloys-materials/build-reports/<project>/<branch-slug>/` only
+after every replay job succeeds. Replay failures also fail the parent pipeline.
+
+`werf.yaml` builds `distribution-fuzz` on the same ready-made `fuzz-go` base as
+operator-argo, tagged `f2625cb04c7c9cf6002b59c49de8e6e22a0be674`. It already
+contains Go, Task, Bash, Python, jq and AWS CLI. Delivery-kit installs Go modules
+with `packages: type: go-mod`; the checkout also retains `vendor/` and sets
+`GOFLAGS=-mod=vendor` so both Task and the shared replay's direct Go commands use
+the committed dependency graph. The image exposes `/src` through its working
+directory, `FUZZ_WORKDIR` and `/etc/fuzz-workdir`, installs `Taskfile.yml`, and
+sets `io.deckhouse.fuzz.engine=go`.
+
+There is no local `fuzz.tmpl`: image builds do not restore corpus or run tests.
+S3 access and replay belong to the shared child-pipeline template. Continuous
+fuzzing remains the responsibility of the fuzzing platform.
 
 The GitLab project needs a Linux amd64 runner tagged `deckhouse`, with Docker,
-`trdl`, Bash, curl, unzip and jq, plus access to the shared CI project. Set
-`DEV_MODULES_REGISTRY`, `DEV_MODULES_REGISTRY_LOGIN` and
-`DEV_MODULES_REGISTRY_PASSWORD`. The default image repository is
-`<DEV_MODULES_REGISTRY>/sys/deckhouse-oss/modules/<CI_PROJECT_NAME>`; override
+Bash 4+, curl and jq, plus access to the shared CI project and the fuzz base
+image. CI downloads the pinned delivery-kit release. Set
+`DEV_WRITE_REGISTRY`, `MODULES_REGISTRY_LOGIN_DEV` and
+`MODULES_REGISTRY_PASSWORD_DEV`, as in operator-argo. The default image repository is
+`<DEV_WRITE_REGISTRY>/sys/deckhouse-oss/modules/<CI_PROJECT_NAME>`; override
 `MODULES_MODULE_SOURCE`/`MODULES_MODULE_NAME` if this fork uses another namespace.
 
-The shared job obtains `FUZZ_S3_ENDPOINT`, `FUZZ_S3_ACCESS_KEY` and
-`FUZZ_S3_SECRET_KEY` from Vault using the GitLab ID token. `VAULT_AUTH_ROLE`
-defaults to `CI_PROJECT_NAME`; configure a role authorized for this GitLab
-project, or override the variable with an existing authorized role. Credentials
-enter the build through werf secrets and are not stored in the image.
+The child jobs obtain `FUZZ_S3_ENDPOINT`, `FUZZ_S3_ACCESS_KEY` and
+`FUZZ_S3_SECRET_KEY` from Vault using the GitLab ID token. The shared template
+defaults `VAULT_AUTH_ROLE` to `dh-${CI_PROJECT_NAME}`; authorize that role for
+this GitLab project, or override it on `replay_fuzz`. Build jobs do not need S3
+credentials. The build logs in to `CI_REGISTRY` with `CI_REGISTRY_USER` and
+`CI_REGISTRY_PASSWORD` to read the private fuzz base at `registry.flant.com`.
+The `deckhouse/ssdlc/ci-images` project must permit this project's CI job token
+to pull the image (including any required job-token allowlist entry).
 
 ## Local commands
 
@@ -72,6 +89,7 @@ The current seed corpus reproduces two pre-existing defects:
 - `FuzzManifestPut/seed#4`: a manifest with an absent schema version produces
   HTTP 500 instead of a client error.
 
-These failures block image publication. CI does not skip either target or set
+These failures fail replay and block S3 build-report publication; the image
+itself is built and pushed before replay. CI does not skip either target or set
 `FUZZ_ALLOW_KNOWN_5XX`. For a local investigation of other manifest inputs only,
 the existing `FUZZ_ALLOW_KNOWN_5XX=1` switch can bypass the second finding.
