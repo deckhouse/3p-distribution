@@ -1,0 +1,42 @@
+project: distribution-fuzz
+configVersion: 1
+---
+# Same fuzz base as operator-argo/internal-migrate-to-delivery-kit.
+image: distribution-fuzz
+from: registry.flant.com/deckhouse/ssdlc/ci-images/fuzz-go:f2625cb04c7c9cf6002b59c49de8e6e22a0be674
+fromLatest: true
+final: false
+git:
+  - add: /
+    to: /src
+    stageDependencies:
+      install:
+        - '**/*'
+secrets:
+  - id: GOPROXY
+    value: {{ env "GOPROXY" "https://proxy.golang.org" | quote }}
+packages:
+  - type: go-mod
+    workdir: /src
+    env:
+      GOMODCACHE: /fuzz/gomod
+      GOPROXY: "%secret:GOPROXY%"
+shell:
+  install:
+    - cd /src
+    - |
+      cat > Taskfile.yml <<'FUZZ_TASKFILE'
+{{ .Files.Get "Taskfile.fuzz.yml" | trimSuffix "\n" | indent 6 }}
+      FUZZ_TASKFILE
+    - echo /src > /etc/fuzz-workdir
+    - chmod -R a+rwX /src /fuzz/gomod
+imageSpec:
+  config:
+    workingDir: /src
+    labels:
+      io.deckhouse.fuzz.engine: go
+    env:
+      FUZZ_WORKDIR: /src
+      GOMODCACHE: /fuzz/gomod
+      CGO_ENABLED: "0"
+      GOFLAGS: "-mod=vendor"

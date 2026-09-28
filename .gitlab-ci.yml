@@ -1,0 +1,65 @@
+include:
+  - project: deckhouse/3p/deckhouse/modules-gitlab-ci
+    ref: &fuzz_templates_ref fuzz-build-replay-templates
+    file: /templates/Build_Fuzz.gitlab-ci.yml
+
+stages:
+  - build
+  - fuzz
+
+variables:
+  MODULES_MODULE_NAME: ${CI_PROJECT_NAME}
+  CLEANUP_REPO: "false"
+  DELIVERY_KIT_VERSION: "v3.4.0-dk.4"
+  WERF_BUILD_REPORT_OPERATIONS: "true"
+  FUZZ_REPLAY_TEMPLATE_REF: *fuzz_templates_ref
+  # Required by the shared build script; this image uses the local checkout.
+  SOURCE_REPO: "fox.flant.com"
+
+.dev-variables:
+  variables:
+    MODULES_REGISTRY: ${DEV_WRITE_REGISTRY}
+    MODULES_REGISTRY_LOGIN: ${MODULES_REGISTRY_LOGIN_DEV}
+    MODULES_REGISTRY_PASSWORD: ${MODULES_REGISTRY_PASSWORD_DEV}
+    MODULES_MODULE_SOURCE: ${MODULES_REGISTRY}/sys/deckhouse-oss/modules
+    REGISTRY_USER: ${MODULES_REGISTRY_LOGIN_DEV}
+    REGISTRY_PASSWORD: ${MODULES_REGISTRY_PASSWORD_DEV}
+
+before_script:
+  - |
+    set -euo pipefail
+    export DOCKER_CONFIG="$(mktemp -d)"
+    trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+
+    DK_PATH="${HOME}/.werf-dk/${DELIVERY_KIT_VERSION}"
+    cached_version=$("${DK_PATH}/werf" version 2>/dev/null || true)
+    if [[ "${cached_version}" != "${DELIVERY_KIT_VERSION}" ]]; then
+      mkdir -p "${DK_PATH}"
+      dk_download=$(mktemp "${DK_PATH}/werf.XXXXXX")
+      curl -fLsS -o "${dk_download}" \
+        "https://github.com/deckhouse/delivery-kit/releases/download/${DELIVERY_KIT_VERSION}/werf"
+      chmod +x "${dk_download}"
+      [[ "$("${dk_download}" version)" == "${DELIVERY_KIT_VERSION}" ]]
+      mv "${dk_download}" "${DK_PATH}/werf"
+    fi
+    export PATH="${DK_PATH}:${PATH}"
+    werf version
+    source "$(werf ci-env gitlab --as-file)"
+    werf cr login "${MODULES_REGISTRY}" \
+      -u "${MODULES_REGISTRY_LOGIN}" -p "${MODULES_REGISTRY_PASSWORD}"
+    # The ready-made fuzz base is in GitLab's private registry, while images
+    # built by this project may be pushed to a separate development registry.
+    if [[ "${CI_REGISTRY}" != "${MODULES_REGISTRY}" ]]; then
+      werf cr login "${CI_REGISTRY}" \
+        -u "${CI_REGISTRY_USER}" -p "${CI_REGISTRY_PASSWORD}"
+    fi
+
+# Both jobs need registry variables: replay_fuzz forwards them to the child.
+build_fuzz:
+  extends: [.fuzz_build, .dev-variables]
+
+replay_fuzz:
+  extends: [.fuzz_replay, .dev-variables]
+  variables:
+    # MR/scheduled replay uses this fork's baseline, not the template's main.
+    FUZZ_S3_BRANCH_SLUG: deckhouse
